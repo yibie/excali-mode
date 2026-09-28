@@ -97,6 +97,11 @@ else
 EMACS_GUI ?= $(EMACS)
 endif
 
+# emacs -Q skips the user's init, so point libgccjit at Homebrew gcc's
+# runtime (libemutls_w) or trampolines fail: "error invoking gcc driver".
+# A no-op where the glob matches nothing.
+EMACS_Q_FIX = --eval "(let ((lib (car (file-expand-wildcards \"/opt/homebrew/opt/gcc/lib/gcc/current/gcc/*/*/libemutls_w.a\")))) (when lib (setq native-comp-driver-options (list (concat \"-L\" (file-name-directory lib))))))"
+
 .PHONY: all module test bench try info clean fonts
 
 all: module
@@ -135,7 +140,7 @@ test: module
 # Needs a graphical session: opens a frame, benchmarks, writes bench.txt.
 bench: module
 	rm -f bench.txt
-	$(EMACS_GUI) -Q -L $(CURDIR) -l $(CURDIR)/test/excal-gui-bench.el
+	$(EMACS_GUI) -Q $(EMACS_Q_FIX) -L $(CURDIR) -l $(CURDIR)/test/excal-gui-bench.el
 	@cat bench.txt
 
 # Download Excalidraw's fonts into fonts/ (needs curl and network access;
@@ -145,7 +150,7 @@ fonts:
 
 # Open the sample scene in a clean GUI Emacs for manual testing.
 try: module
-	$(EMACS_GUI) -Q -L $(CURDIR) --eval "(progn (require 'excal) (excal-open \"$(CURDIR)/test/sample.excalidraw\"))"
+	$(EMACS_GUI) -Q $(EMACS_Q_FIX) -L $(CURDIR) --eval "(progn (require 'excal) (excal-open \"$(CURDIR)/test/sample.excalidraw\"))"
 
 clean:
 	rm -rf build excal-module.so excal-module.dylib excal-module.dll *.o *.elc
