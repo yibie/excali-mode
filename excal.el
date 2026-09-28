@@ -28,6 +28,7 @@
 (require 'excal-create)
 (require 'excal-actions)
 (require 'excal-linear)
+(require 'excal-elbow)
 (require 'excal-snap)
 (require 'excal-frame)
 (require 'excal-erase)

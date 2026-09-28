@@ -29,6 +29,7 @@
 (require 'excal-binding)
 (require 'excal-snap)
 (require 'excal-frame)
+(require 'excal-elbow)
 
 (defconst excal--minimum-arrow-size 20
   "MINIMUM_ARROW_SIZE, screen px: shorter linear drags start click-click mode.")
@@ -136,7 +137,11 @@ Return the damage of the highlight change.  Lines never bind."
 (defun excal--bind-new-arrow (arrow)
   "Bind the ends of the new ARROW and snap them to the bound outlines."
   (setq excal--binding-highlight nil)
-  (when (equal (excal--get arrow 'type) "arrow")
+  (cond
+   ((excal--elbow-p arrow)
+    ;; Elbow arrows bind with outline-snapped fixed points and re-route.
+    (excal--elbow-finish-new arrow excal--new-arrow-start))
+   ((equal (excal--get arrow 'type) "arrow")
     (let* ((n (length (excal--get arrow 'points)))
            (start (excal--arrow-point arrow 0))
            (end (excal--arrow-point arrow (1- n)))
@@ -149,7 +154,7 @@ Return the damage of the highlight change.  Lines never bind."
                              (and excal--binding-hover-since
                                   (>= (- (float-time) excal--binding-hover-since)
                                       excal--bind-mode-timeout)))))
-      (excal--update-arrow arrow)))
+      (excal--update-arrow arrow))))
   (setq excal--new-arrow-start nil))
 
 (defun excal--set-last-point (element dx dy)
@@ -161,12 +166,16 @@ Return the damage of the highlight change.  Lines never bind."
     (excal--touch element)))
 
 (defun excal--new-linear (type start)
-  "Return a new line or arrow of TYPE starting at scene point START."
-  (excal--apply-current-style
-   (excal--make-element type (car start) (cdr start)
-                        (cons 'points (vector [0.0 0.0] [0.0 0.0]))
-                        (cons 'startBinding :null) (cons 'endBinding :null)
-                        (cons 'startArrowhead :null) (cons 'endArrowhead :null))))
+  "Return a new line or arrow of TYPE starting at scene point START.
+With the elbow arrow type, arrows are elbow arrows."
+  (let ((element (excal--apply-current-style
+                  (excal--make-element type (car start) (cdr start)
+                                       (cons 'points (vector [0.0 0.0] [0.0 0.0]))
+                                       (cons 'startBinding :null) (cons 'endBinding :null)
+                                       (cons 'startArrowhead :null) (cons 'endArrowhead :null)))))
+    (when (and (equal type "arrow") (equal (excal--style-value 'arrowType) "elbow"))
+      (excal--elbow-make element))
+    element))
 
 (defun excal--create-linear (type start lock-angle &optional inside)
   "Drag out a new line or arrow of TYPE from scene point START.
@@ -174,7 +183,8 @@ LOCK-ANGLE snaps the direction to 15 degrees; INSIDE binds arrow ends
 inside shapes rather than on their outline.  A short drag switches to
 click-click mode instead of finishing."
   (setq excal--new-arrow-inside inside excal--binding-hover-since nil)
-  (let ((element (excal--new-linear type start)))
+  (let ((element (excal--new-linear type start))
+        (last-d '(0 . 0)))
     (setq excal--new-arrow-start (and (equal type "arrow")
                                       (excal--binding-candidate start (list element))))
     (excal--add-new element)
@@ -183,14 +193,19 @@ click-click mode instead of finishing."
      (lambda (ev)
        (let* ((p (excal--grid-point (excal--event-scene-xy ev)))
               (d (cons (- (car p) (car start)) (- (cdr p) (cdr start))))
-              (d (if lock-angle (excal--lock-angle (car d) (cdr d)) d)))
+              (d (if (and lock-angle (not (excal--elbow-p element)))
+                     (excal--lock-angle (car d) (cdr d))
+                   d)))
+         (setq last-d d)
          (excal--damage-union
           (excal--with-damage element
-            (excal--set-last-point element (car d) (cdr d)))
+            (if (excal--elbow-p element)
+                (excal--elbow-drag-to element (cons (+ (car start) (car d))
+                                                    (+ (cdr start) (cdr d))))
+              (excal--set-last-point element (car d) (cdr d))))
           (excal--track-binding element (cons (+ (car start) (car d))
                                               (+ (cdr start) (cdr d))))))))
-    (let* ((last (aref (excal--get element 'points) 1))
-           (length (* excal--zoom (sqrt (+ (expt (aref last 0) 2) (expt (aref last 1) 2))))))
+    (let* ((length (* excal--zoom (sqrt (+ (expt (car last-d) 2) (expt (cdr last-d) 2))))))
       (if (< length excal--minimum-arrow-size)
           (setq excal--multi-element element)
         (excal--bind-new-arrow element)
@@ -207,9 +222,11 @@ click-click mode instead of finishing."
     (excal--render
      (excal--damage-union
       (excal--with-damage element
-        (excal--set-last-point element
-                               (- (car scene-xy) (excal--get element 'x))
-                               (- (cdr scene-xy) (excal--get element 'y))))
+        (if (excal--elbow-p element)
+            (excal--elbow-drag-to element scene-xy)
+          (excal--set-last-point element
+                                 (- (car scene-xy) (excal--get element 'x))
+                                 (- (cdr scene-xy) (excal--get element 'y)))))
       (excal--track-binding element scene-xy)))))
 
 (defun excal--multi-click (scene-xy)
@@ -226,6 +243,10 @@ and a new floating point follows the mouse."
                                           (expt (- (cdr a) (cdr b)) 2)))
                                  close))))
     (cond
+     ((excal--elbow-p element)
+      ;; Elbow arrows have only a start and an end: this click ends it.
+      (excal--elbow-drag-to element scene-xy)
+      (excal-finish-multi-point))
      ((and (> n 2) (funcall near scene-xy committed))
       (excal-finish-multi-point))
      ((and (equal (excal--get element 'type) "line") (>= n 3)
@@ -251,14 +272,23 @@ points is discarded."
   (when-let* ((element excal--multi-element))
     (setq excal--multi-element nil)
     (let ((points (excal--get element 'points)))
-      (if (< (length points) 3)
-          (progn (setq excal--binding-highlight nil excal--new-arrow-start nil)
-                 (excal--discard element))
+      (cond
+       ((excal--elbow-p element)
+        ;; The route to the floating end is the arrow.
+        (if (and (zerop (excal--get element 'width)) (zerop (excal--get element 'height)))
+            (progn (setq excal--binding-highlight nil excal--new-arrow-start nil)
+                   (excal--discard element))
+          (excal--bind-new-arrow element)
+          (excal--created element)))
+       ((< (length points) 3)
+        (setq excal--binding-highlight nil excal--new-arrow-start nil)
+        (excal--discard element))
+       (t
         (excal--put element 'points (seq-take points (1- (length points))))
         (excal--linear-extent element)
         (excal--touch element)
         (excal--bind-new-arrow element)
-        (excal--created element)))
+        (excal--created element))))
     (excal--render)))
 
 ;;;; Freedraw
@@ -387,12 +417,13 @@ With the grid on the start snaps to it, unless super is held."
 
 (defun excal-select-tool (tool)
   "Make TOOL current.
-Choosing the arrow tool again cycles the arrow type between sharp and
-round (`currentItemArrowType'); choosing the eraser or hand again goes
+Choosing the arrow tool again cycles the arrow type sharp, round,
+elbow (`currentItemArrowType'); choosing the eraser or hand again goes
 back to the previous tool."
   (when (and (eq tool 'arrow) (eq excal--tool 'arrow))
     (excal-set-style 'arrowType
-                     (if (equal (excal--style-value 'arrowType) "round") "sharp" "round"))
+                     (pcase (excal--style-value 'arrowType)
+                       ("sharp" "round") ("round" "elbow") (_ "sharp")))
     (message "Arrow type: %s" (excal--style-value 'arrowType)))
   (when excal--multi-element (excal-finish-multi-point))
   (if (and (memq tool '(eraser hand)) (eq excal--tool tool))

@@ -259,11 +259,17 @@ holding Alt or hovering for `excal--bind-mode-timeout')."
           focus
         (excal--orbit-point element focus toward)))))
 
+(declare-function excal--elbow-p "excal-elbow")
+(declare-function excal--elbow-reroute "excal-elbow")
+
 (defun excal--update-arrow (arrow)
-  "Move ARROW's bound ends to where their bindings put them."
-  (dolist (end '(start end))
-    (when-let* ((point (excal--bound-point arrow end)))
-      (excal--set-arrow-point arrow (excal--end-index arrow end) point))))
+  "Move ARROW's bound ends to where their bindings put them.
+Elbow arrows are routed again instead (excal-elbow.el)."
+  (if (and (fboundp 'excal--elbow-p) (excal--elbow-p arrow))
+      (excal--elbow-reroute arrow)
+    (dolist (end '(start end))
+      (when-let* ((point (excal--bound-point arrow end)))
+        (excal--set-arrow-point arrow (excal--end-index arrow end) point)))))
 
 (defun excal--bound-arrows (elements)
   "Return the live arrows bound to any of ELEMENTS."

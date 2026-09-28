@@ -132,9 +132,12 @@
    (should (= (length excal--elements) 1))))
 
 (ert-deftest excal-create-test-arrow-type-cycles ()
-  "Choosing the arrow tool again toggles sharp and round arrows."
+  "Choosing the arrow tool again cycles sharp, round and elbow arrows."
   (excal-create-test--in-window
    (excal-select-tool 'arrow)
+   (excal-select-tool 'arrow)
+   (should (equal (excal--style-value 'arrowType) "elbow"))
+   (should (eq (excal--roundness-for "arrow") :null))
    (excal-select-tool 'arrow)
    (should (equal (excal--style-value 'arrowType) "sharp"))
    (should (eq (excal--roundness-for "arrow") :null))

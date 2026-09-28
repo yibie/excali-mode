@@ -22,6 +22,7 @@
 (require 'excal-frame)
 (require 'excal-erase)
 (require 'excal-index)
+(require 'excal-elbow)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -150,7 +151,8 @@ unbind it; moved arrows let go of shapes that stay behind.  The grid
 snaps the top-left of the moved bounds; object snapping aligns with
 other elements.  SUPER, held at the press, suppresses the grid and
 inverts object snapping."
-  (let* ((elements (excal--with-frame-children excal--selection))
+  ;; Bound elbow arrows only move with both of their shapes.
+  (let* ((elements (excal--elbow-movable (excal--with-frame-children excal--selection)))
          (top-left (let ((b (excal--elements-bounds excal--selection)))
                      (cons (nth 0 b) (nth 1 b))))
          (affected (excal--with-bound-arrows elements))
@@ -163,25 +165,26 @@ inverts object snapping."
          (moved nil))
     (excal--drag-loop
      (lambda (ev)
-       (let* ((p (excal--event-scene-xy ev))
-              (dx (- (car p) (car start))) (dy (- (cdr p) (cdr start)))
-              (corner (excal--grid-point (cons (+ (car top-left) dx) (+ (cdr top-left) dy))
-                                         super))
-              (dx (- (car corner) (car top-left))) (dy (- (cdr corner) (cdr top-left)))
-              (snapped (if (excal--grid-active-p super)
-                           (cons dx dy)
-                         (excal--snap-move elements dx dy super)))
-              (dx (car snapped)) (dy (cdr snapped)))
-         (when (or moved (not hold)
-                   (> (max (abs dx) (abs dy)) excal--dragging-threshold))
-           (setq moved t)
-           (excal--with-elements-damage affected
-             (cl-mapc (lambda (e origin)
-                        (excal--put e 'x (float (+ (car origin) dx)))
-                        (excal--put e 'y (float (+ (cdr origin) dy)))
-                        (excal--touch e))
-                      elements origins)
-             (excal--follow elements elements))))))
+       (when elements
+         (let* ((p (excal--event-scene-xy ev))
+                (dx (- (car p) (car start))) (dy (- (cdr p) (cdr start)))
+                (corner (excal--grid-point (cons (+ (car top-left) dx) (+ (cdr top-left) dy))
+                                           super))
+                (dx (- (car corner) (car top-left))) (dy (- (cdr corner) (cdr top-left)))
+                (snapped (if (excal--grid-active-p super)
+                             (cons dx dy)
+                           (excal--snap-move elements dx dy super)))
+                (dx (car snapped)) (dy (cdr snapped)))
+           (when (or moved (not hold)
+                     (> (max (abs dx) (abs dy)) excal--dragging-threshold))
+             (setq moved t)
+             (excal--with-elements-damage affected
+               (cl-mapc (lambda (e origin)
+                          (excal--put e 'x (float (+ (car origin) dx)))
+                          (excal--put e 'y (float (+ (cdr origin) dy)))
+                          (excal--touch e))
+                        elements origins)
+               (excal--follow elements elements)))))))
     (setq excal--snap-lines nil)
     (when moved
       (excal--release-moved-arrows elements)
@@ -283,6 +286,8 @@ adds to it."
        (excal-follow-link linked))
       ('eraser
        (excal--erase-drag start (memq 'meta (event-modifiers event))))
+      ;; A selected elbow arrow's ends and segment midpoints.
+      ((and 'select (guard (excal--elbow-mouse-down start))))
       ((and 'select (guard (excal--linear-mouse-down event start))))
       ((and 'select (let handle (excal--handle-at start)) (guard handle))
        (excal--transform-drag handle start shift
@@ -358,10 +363,14 @@ element is created."
      ;; While drawing points a double click is just another click.
      (excal--multi-element
       (excal--multi-click xy))
+     ;; On a selected elbow arrow's segment midpoint: release the segment.
+     ((let ((single (excal--single-selection)))
+        (and (excal--elbow-p single) (excal--elbow-double-click single xy))))
      ;; Double-clicking a line edits its points; with super, arrows too.
      ((and hit (or (equal (excal--get hit 'type) "line")
                    (and (memq 'super (event-modifiers event))
-                        (excal--linear-p hit))))
+                        (excal--linear-p hit)
+                        (not (excal--elbow-p hit)))))
       (excal--deselect)
       (excal--select (list hit))
       (excal-edit-linear t))
