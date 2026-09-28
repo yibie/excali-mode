@@ -458,8 +458,9 @@ event reach the minibuffer."
 (defun excal-double-click (event)
   "Edit text, enter a group, or add text at EVENT.
 Double-clicking a grouped element enters its group so that its members
-can be selected one by one; double-clicking text edits it; elsewhere a
-new text element is created."
+can be selected one by one; double-clicking text edits it, and a shape
+that can hold text gets its label edited or added; elsewhere a new text
+element is created."
   (interactive "e")
   (excal--await-release)
   (let* ((xy (excal--event-scene-xy event))
@@ -472,8 +473,16 @@ new text element is created."
       (excal--select (excal--unit hit)))
      ((equal (excal--get hit 'type) "text")
       (excal--deselect)
-      (excal--select (list hit))
-      (excal-edit-text))
+      (excal--select (list (or (excal--container-of hit) hit)))
+      (if (excal--container-of hit)
+          (excal--edit-container-text (excal--container-of hit))
+        (excal-edit-text)))
+     ((let ((single (excal--single-selection)))
+        (and (excal--text-container-p single)
+             (or (eq single hit) (null hit))))
+      (excal--edit-container-text (excal--single-selection)))
+     ((and (excal--text-container-p hit) (excal--binds-text-at-p hit xy))
+      (excal--edit-container-text hit))
      (t
       (setq excal--tool 'select)
       (excal--insert-text (car xy) (cdr xy))))
@@ -488,16 +497,39 @@ new text element is created."
   "C-j" #'newline
   "S-<return>" #'newline)
 
+(defun excal--container-geometry (container)
+  "Snapshot CONTAINER's box so a text edit can restore or shrink it."
+  (and container
+       (mapcar (lambda (key) (cons key (excal--get container key)))
+               '(x y width height))))
+
+(defun excal--restore-geometry (container geometry)
+  "Put CONTAINER's box back to GEOMETRY from `excal--container-geometry'."
+  (pcase-dolist (`(,key . ,value) geometry)
+    (excal--put container key value))
+  (excal--touch container))
+
+(defun excal--preview-text (element container geometry text)
+  "Show TEXT in ELEMENT while editing.
+A CONTAINER grows to fit and shrinks back, but never below its height
+in GEOMETRY, as in Excalidraw's editor."
+  (when container
+    (excal--put container 'height (alist-get 'height geometry)))
+  (excal--set-text element text))
+
 (defun excal--edit-text-live (element)
   "Edit ELEMENT's text in the minibuffer, previewing every change.
 Return the confirmed text, or nil when the edit was aborted; an abort
-restores the original text."
+restores the original text and container size."
   (let* ((buffer (current-buffer))
-         (original (or (excal--get element 'text) ""))
+         (container (excal--container-of element))
+         (geometry (excal--container-geometry container))
+         (original (or (excal--get element 'originalText)
+                       (excal--get element 'text) ""))
          (preview (lambda (&rest _)
                     (let ((text (minibuffer-contents-no-properties)))
                       (with-current-buffer buffer
-                        (excal--set-text element text)
+                        (excal--preview-text element container geometry text)
                         (excal--render)))))
          (confirmed nil))
     (unwind-protect
@@ -507,8 +539,21 @@ restores the original text."
                 (read-from-minibuffer "Text (C-j newline, RET done): "
                                       original excal-text-minibuffer-map)))
       (with-current-buffer buffer
-        (excal--set-text element (or confirmed original))))
+        (if confirmed
+            (excal--preview-text element container geometry confirmed)
+          (when container (excal--restore-geometry container geometry))
+          (excal--set-text element original))))
     confirmed))
+
+(defun excal--finish-text-edit (element text)
+  "Delete ELEMENT if the edit left TEXT blank; return non-nil if kept."
+  (if (and text (not (string-empty-p (string-trim text))))
+      t
+    (if-let* ((container (excal--container-of element)))
+        (excal--remove-bound-text container element)
+      (setq excal--elements (delq element excal--elements)))
+    (excal--deselect)
+    nil))
 
 (defun excal--insert-text (x y)
   "Create a text element at scene X, Y and edit it in place."
@@ -518,18 +563,61 @@ restores the original text."
     (excal--select (list element))
     (excal--render)
     (let ((text (condition-case nil (excal--edit-text-live element) (quit nil))))
-      (when (or (null text) (string-empty-p text))
-        (setq excal--elements (delq element excal--elements))
-        (excal--deselect)))
+      (excal--finish-text-edit element text))
     (excal--render)))
 
+(defun excal--edit-container-text (container)
+  "Edit CONTAINER's label, creating it if CONTAINER has none."
+  (let* ((existing (excal--bound-text-of container))
+         (bound (alist-get 'boundElements container :null))
+         (geometry (excal--container-geometry container))
+         (text (or existing
+                   (let ((label (excal--add-bound-text container)))
+                     (excal--apply-current-style label)
+                     (excal--put label 'textAlign "center")
+                     (excal--put label 'verticalAlign "middle")
+                     (excal--put label 'lineHeight
+                                 (excal--line-height (excal--get label 'fontFamily)))
+                     (excal--redraw-text label container)))))
+    (excal--deselect)
+    (excal--select (list container))
+    (excal--render)
+    (let ((result (condition-case nil (excal--edit-text-live text) (quit nil))))
+      (unless (or (and existing (null result)) ; Aborted: keep the label.
+                  (excal--finish-text-edit text result))
+        (unless existing
+          ;; Leave a cancelled new label no trace in the container.
+          (excal--put container 'boundElements bound)
+          (excal--restore-geometry container geometry))
+        (excal--select (list container))))
+    (excal--render)))
+
+(defun excal--binds-text-at-p (container scene-xy)
+  "Return non-nil if double-clicking SCENE-XY on CONTAINER edits its label.
+Like upstream, a transparent shape only takes a new label when the
+click is near its outline; filled shapes, arrows and shapes that already
+have a label take it anywhere."
+  (or (excal--arrow-p container)
+      (excal--bound-text-of container)
+      (not (member (excal--get container 'backgroundColor) '(nil "transparent")))
+      (pcase-let ((`(,x1 ,y1 ,x2 ,y2) (excal--bounds container))
+                  (tolerance (/ 10.0 excal--zoom))
+                  (`(,px . ,py) scene-xy))
+        (or (< (- px x1) tolerance) (< (- x2 px) tolerance)
+            (< (- py y1) tolerance) (< (- y2 py) tolerance)))))
+
 (defun excal-edit-text ()
-  "Edit the selected text element, previewing changes on the canvas."
+  "Edit the selected text element or the label of the selected shape.
+Changes are previewed on the canvas; a shape without a label gets one."
   (interactive)
   (let ((element (excal--single-selection)))
-    (when (equal (excal--get element 'type) "text")
-      (condition-case nil (excal--edit-text-live element) (quit nil))
-      (excal--render))))
+    (cond
+     ((equal (excal--get element 'type) "text")
+      (let ((text (condition-case nil (excal--edit-text-live element) (quit nil))))
+        (when text (excal--finish-text-edit element text)))
+      (excal--render))
+     ((excal--text-container-p element)
+      (excal--edit-container-text element)))))
 
 ;;;; Selection commands
 

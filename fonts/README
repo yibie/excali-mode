@@ -1,0 +1,66 @@
+Fonts for excal
+===============
+
+Font files in this directory (and its subdirectories) are registered
+with the font backend when excal-text.el loads, before any text is
+measured.  They are not committed: `make fonts` downloads them.
+
+    make fonts        # needs curl and network access
+
+What `make fonts` does (fonts/excal-fetch-fonts.el):
+
+- Lists packages/excalidraw/fonts/<Dir> of excalidraw/excalidraw@master
+  through the GitHub contents API and downloads every .woff2 in
+  Excalifont, Nunito, Lilita, ComicShanns, Liberation, Cascadia, Virgil.
+- Downloads the complete Xiaolai-Regular.ttf from the latest release of
+  lxgw/kose-font (upstream Excalidraw only ships 208 CJK subsets).
+- If `woff2_decompress` is installed (brew/apt package "woff2"), converts
+  each WOFF2 to TTF.  If `pyftmerge` (fonttools) is installed too, the
+  unicode-range subsets of one family are merged into
+  <Dir>/<Dir>-Regular.ttf.
+
+Font backends
+-------------
+
+The module registers each file with every backend it was built with and
+reports success for the one Pango uses (`M-x excal-font-report` shows
+the font map and which fonts actually render each family):
+
+- CoreText (macOS; Homebrew Pango 1.58 uses PangoCairoCoreTextFontMap):
+  CTFontManagerRegisterFontsForURL, process scope.  Reads TTF, OTF and
+  WOFF2 directly.  Caveat: of several files with the same family name
+  (upstream's subsets) only one face is used, so merge the subsets
+  (woff2 + fonttools) for full coverage.
+- fontconfig (Linux, BSD): FcConfigAppFontAddFile.  FreeType reads WOFF2
+  only when built with Brotli; otherwise install woff2 so the files are
+  converted to TTF.
+- Windows: AddFontResourceEx(FR_PRIVATE) (untested).
+
+After registering, the module drops Pango's default font map so the new
+fonts are seen.  Without the files, text falls back to system fonts in
+the order given by `excal-font-families` (built-in lists in
+src/excal-text.c: the family, Xiaolai for Excalifont, then Helvetica /
+Arial / DejaVu Sans, CJK system fonts, and emoji fonts).  Metrics used
+for layout (line height, baseline) always come from Excalidraw's
+FONT_METADATA for the element's font id, so layout heights match
+upstream even with fallback fonts; widths depend on the font actually
+used.
+
+Licenses
+--------
+
+| Font            | Upstream dir | License                                   |
+|-----------------+--------------+-------------------------------------------|
+| Excalifont      | Excalifont   | SIL OFL 1.1 (header of Excalifont/index.ts) |
+| Nunito          | Nunito       | SIL OFL 1.1 (Google Fonts)                |
+| Lilita One      | Lilita       | SIL OFL 1.1 (Google Fonts)                |
+| Comic Shanns    | ComicShanns  | MIT (header of ComicShanns/index.ts)      |
+| Liberation Sans | Liberation   | SIL OFL 1.1 (Liberation Fonts 2.x)        |
+| Cascadia Code   | Cascadia     | SIL OFL 1.1 (microsoft/cascadia-code)     |
+| Virgil          | Virgil       | SIL OFL 1.1 (excalidraw/virgil)           |
+| Xiaolai         | lxgw/kose-font release | SIL OFL 1.1 (lxgw/kose-font)    |
+
+Helvetica and Segoe UI Emoji are local system fonts upstream and are
+never downloaded.  The OFL allows bundling and redistribution with
+software as long as the fonts are not sold by themselves and keep their
+copyright notices and license.

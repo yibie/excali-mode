@@ -13,6 +13,7 @@
 ;;; Code:
 
 (require 'excal-core)
+(require 'excal-text)
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)

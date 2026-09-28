@@ -11,6 +11,7 @@ make            # builds excal-module (.so/.dylib/.dll per Emacs; needs cairo, p
 make info       # shows the detected platform, Emacs, header and module name
 make test       # batch ERT: round-trip, text, rendering, tiles, resizing
 make try        # opens the sample in a clean GUI Emacs
+make fonts      # downloads Excalidraw's fonts into fonts/ (see fonts/README)
 make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 #+end_src
 
@@ -27,9 +28,9 @@ make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 | =v r o d a l p t= | select / rectangle / ellipse / diamond / arrow / line / pen / text |
 | drag           | draw with tool; move selection; pan on empty space |
 | drag a handle  | resize the selection (text scales its font) |
-| double-click   | edit text under the pointer, or add text there |
+| double-click   | edit text under the pointer, add or edit a shape's label, or add text there |
 | wheel, C-wheel | pan, zoom at pointer                    |
-| =e=, =RET=     | edit selected text, previewed live; =C-j= newline, =C-g= cancel |
+| =e=, =RET=     | edit selected text or the selected shape's label, previewed live; =C-j= newline, =C-g= cancel |
 | =DEL=          | delete selection                        |
 | === =-= =0=    | zoom in / out / reset                   |
 | =H=            | toggle 1x/2x canvas resolution          |
@@ -77,13 +78,32 @@ fully.
 =M-x excal-bench-backends= in an excal buffer compares them; =make bench=
 does the same in a fresh GUI Emacs and writes =bench.txt=.
 
+* Text and fonts
+
+Text follows Excalidraw's layout exactly wherever it does not depend on
+glyph widths: per-family line heights and baselines (=FONT_METADATA=,
+=getVerticalOffset=), heights of lines × size × line height, the
+tokenizer-based =wrapText= (CJK, emoji, hyphen and whitespace rules),
+fixed-width (=autoResize= false) text, and labels in rectangles,
+ellipses, diamonds, sticky notes and on arrows (padding, maximum sizes,
+alignment, container growth, =labelPosition=).  Pango only measures and
+draws single lines, so widths match the web app when the same fonts are
+installed.  =make fonts= downloads them into =fonts/=, which is
+registered with the font backend (CoreText on macOS with Homebrew
+Pango, fontconfig elsewhere) when excal loads; without them text falls
+back to system fonts, see =excal-font-families= and
+=M-x excal-font-report=.
+
 * Layout
 
 - =src/excal-render.c= — roughjs-style strokes, hachure fills, Pango text.
+- =src/excal-text.c= — font registration, Pango line measuring and drawing.
 - =src/excal-module.c= — module glue, framebuffer, tile diffing.
 - =src/excal-preview.c= — zoom previews scaled from rendered pixels.
 - =src/excal-layer.m= — CoreAnimation overlay backend (macOS).
 - =excal-core.el= — module loading, shared state, document model.
+- =excal-text.el= — fonts, text measurement, wrapping, bound text and
+  arrow labels.
 - =excal-view.el= — framebuffer, presentation backends, damage, scroll
   reuse, pan/zoom, export.
 - =excal-select.el= — selection model, groups, box selection, overlays.
@@ -98,7 +118,8 @@ does the same in a fresh GUI Emacs and writes =bench.txt=.
 
 Not ported: perfect-freehand (pen strokes are smoothed polylines), arrow
 bindings, groups, frames, images, undo, rotation (rotated elements cannot be
-resized), text inside shapes, collaboration.  Text is typed in the
+resized), collaboration.  Text is typed in the
 minibuffer with a live preview rather than on the canvas.  Rough strokes resemble but do not match the web
-renderer pixel for pixel.  Excalifont is used when installed; otherwise text
-falls back to PingFang SC.
+renderer pixel for pixel.  Label positions on curved arrows follow the
+curve without roughjs jitter.  Without =make fonts=, text uses system
+fallback fonts, so widths and wrapping differ from the web app.

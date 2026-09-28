@@ -34,6 +34,13 @@ HEADERS := src/excal-render.h src/excal-text.h src/excal-layer.h src/excal-previ
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))
 PACKAGES := cairo pangocairo
 
+# Fonts in fonts/ are registered with fontconfig when Pango uses it
+# (Linux, BSD, Homebrew on macOS), and with CoreText on macOS.
+ifeq ($(shell $(PKG_CONFIG) --exists fontconfig pangofc && echo yes),yes)
+PACKAGES += fontconfig pangofc
+CPPFLAGS += -DEXCAL_HAVE_FONTCONFIG
+endif
+
 CPPFLAGS += -I$(EMACS_MODULE_INCLUDE) $(shell $(PKG_CONFIG) --cflags $(PACKAGES))
 CFLAGS ?= -O2 -g
 CFLAGS += -std=c11 -Wall -Wextra -Wno-unused-parameter
@@ -42,20 +49,23 @@ LDLIBS += $(shell $(PKG_CONFIG) --libs $(PACKAGES)) -lm
 
 ifneq ($(PLATFORM),windows)
 CFLAGS += -fPIC
+else
+LDLIBS += -lgdi32
 endif
 
 # macOS: optional CoreAnimation overlay backend, and the GUI binary lives
 # inside Emacs.app so that a frame opens.
 ifeq ($(PLATFORM),macos)
 OBJECTS += build/excal-layer.o
-CPPFLAGS += -DEXCAL_HAVE_LAYER
-LDLIBS += -framework AppKit -framework QuartzCore -framework IOSurface
+CPPFLAGS += -DEXCAL_HAVE_LAYER -DEXCAL_HAVE_CORETEXT
+LDLIBS += -framework AppKit -framework QuartzCore -framework IOSurface \
+	-framework CoreText -framework CoreFoundation
 EMACS_GUI ?= $(firstword $(wildcard $(dir $(EMACS_BIN))../Emacs.app/Contents/MacOS/Emacs) $(EMACS))
 else
 EMACS_GUI ?= $(EMACS)
 endif
 
-.PHONY: all module test bench try info clean
+.PHONY: all module test bench try info clean fonts
 
 all: module
 
@@ -91,6 +101,11 @@ bench: module
 	rm -f bench.txt
 	$(EMACS_GUI) -Q -L $(CURDIR) -l $(CURDIR)/test/excal-gui-bench.el
 	@cat bench.txt
+
+# Download Excalidraw's fonts into fonts/ (needs curl and network access;
+# woff2_decompress and pyftmerge are used when installed).  See fonts/README.
+fonts:
+	$(EMACS) --batch -Q -l fonts/excal-fetch-fonts.el
 
 # Open the sample scene in a clean GUI Emacs for manual testing.
 try: module
