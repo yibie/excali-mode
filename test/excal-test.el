@@ -664,7 +664,7 @@ MODIFIERS, such as (shift), are added to the press event."
   "New elements get the current style, with the right roundness type."
   (excal-test--with-scene
    (excal--load-current-style nil)
-   (excal-set-style 'strokeWidth 4)
+   (excal-set-style 'strokeWidth "bold")
    (excal-set-style 'endArrowhead "triangle")
    (let ((rect (excal--apply-current-style (excal--make-element "rectangle" 0 0)))
          (arrow (excal--apply-current-style
@@ -672,6 +672,16 @@ MODIFIERS, such as (shift), are added to the press event."
          (line (excal--apply-current-style
                 (excal--make-element "line" 0 0 (cons 'points [[0.0 0.0] [9.0 0.0]])))))
      (should (= (excal--get rect 'strokeWidth) 4))
+     ;; Freedraw uses the thinner scale; diamonds round proportionally.
+     (should (= (excal--get (excal--apply-current-style
+                             (excal--make-element "freedraw" 0 0 (cons 'points [[0.0 0.0]])))
+                            'strokeWidth)
+                2))
+     (should (equal (excal--get (excal--apply-current-style
+                                 (excal--make-element "diamond" 0 0))
+                                'roundness)
+                    '((type . 2))))
+     (should (equal (excal--element-stroke-width-key rect) "bold"))
      (should (equal (excal--get rect 'roundness) '((type . 3))))
      (should (equal (excal--get arrow 'roundness) '((type . 2))))
      (should (equal (excal--get arrow 'endArrowhead) "triangle"))
