@@ -137,7 +137,8 @@
   "The pointer reflects handles, elements, empty space and the tool."
   (excal-test--with-scene
    (let ((rect (excal--make-element "rectangle" 10 20
-                                    (cons 'width 100.0) (cons 'height 50.0))))
+                                    (cons 'width 100.0) (cons 'height 50.0)
+                                    (cons 'backgroundColor "#a5d8ff"))))
      (setq excal--elements (list rect)
            excal--scroll-x 0.0 excal--scroll-y 0.0
            excal--tool 'select)

@@ -14,6 +14,7 @@
 (require 'excal-style)
 (require 'excal-handles)
 (require 'excal-transform)
+(require 'excal-hit)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -26,15 +27,6 @@
   :group 'excal)
 
 ;;;; Hit testing
-
-(defun excal--hit (scene-xy)
-  "Return the topmost live element under SCENE-XY."
-  (let ((tolerance (/ 8.0 excal--zoom)))
-    (cl-find-if (lambda (element)
-                  (pcase-let ((`(,x1 ,y1 ,x2 ,y2) (excal--bounds element)))
-                    (and (<= (- x1 tolerance) (car scene-xy) (+ x2 tolerance))
-                         (<= (- y1 tolerance) (cdr scene-xy) (+ y2 tolerance)))))
-                (reverse (excal--live-elements)))))
 
 (defun excal--in-selection-box-p (scene-xy)
   "Return non-nil if SCENE-XY lies inside the drawn selection box.

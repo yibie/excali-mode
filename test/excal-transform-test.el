@@ -215,4 +215,5 @@
      (excal-test--drag 35 10 100 45)
      (should (excal-transform-test--near (excal--get r 'angle) (/ float-pi 2))))))
 
+(provide 'excal-transform-test)
 ;;; excal-transform-test.el ends here

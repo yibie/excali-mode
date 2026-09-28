@@ -17,6 +17,7 @@
 (require 'excal-select)
 (require 'excal-handles)
 (require 'excal-transform)
+(require 'excal-hit)
 (require 'excal-style)
 (require 'excal-edit)
 (require 'excal-history)

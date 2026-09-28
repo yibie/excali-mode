@@ -83,8 +83,12 @@ info:
 
 TESTS := $(wildcard test/*-test.el)
 
+# Test files may (require 'excal-test) for its helpers, so skip files
+# whose feature is already loaded instead of loading them twice.
 test: module
-	$(EMACS) --batch -Q -L . -L test -l ert $(addprefix -l ,$(TESTS)) -f ert-run-tests-batch-and-exit
+	$(EMACS) --batch -Q -L . -L test -l ert \
+	  --eval '(dolist (f (list $(foreach t,$(TESTS),"$(t)"))) (unless (featurep (intern (file-name-base f))) (load (expand-file-name f) nil t)))' \
+	  -f ert-run-tests-batch-and-exit
 
 # Needs a graphical session: opens a frame, benchmarks, writes bench.txt.
 bench: module

@@ -117,10 +117,13 @@ The selection is kept in z-order and without duplicates."
 The result is in z-order."
   (let ((units nil))
     (dolist (element (excal--live-elements))
-      (let ((unit (excal--unit element)))
+      ;; Bound text is never selected on its own; it follows its container.
+      (unless (and (equal (excal--get element 'type) "text")
+                   (stringp (excal--get element 'containerId)))
+       (let ((unit (excal--unit element)))
         (unless (assoc unit units)
           (push (cons unit (excal--inside-p (excal--elements-bounds unit) rect))
-                units))))
+                units)))))
     (apply #'append (mapcar #'car (seq-filter #'cdr (nreverse units))))))
 
 (defun excal--normalize-rect (x1 y1 x2 y2)
