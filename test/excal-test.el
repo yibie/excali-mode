@@ -614,4 +614,83 @@ Temporary buffers skip `kill-buffer-hook', so cancel the preview here."
       (let ((excal-backend choice))
         (should (eq (excal--resolve-backend) choice))))))
 
+;; End-to-end mouse gestures with synthesized events
+
+(defun excal-test--posn (x y)
+  "Return a text-area mouse position at window pixel X, Y."
+  (list (selected-window) 1 (cons x y) 0 nil 1 '(0 . 0) nil '(0 . 0) '(1 . 1)))
+
+(defun excal-test--drag (x0 y0 x1 y1 &optional modifiers)
+  "Run `excal-mouse-down' for a drag from X0,Y0 to X1,Y1 in window pixels.
+MODIFIERS, such as (shift), are added to the press event."
+  (let ((start (excal-test--posn x0 y0)))
+    (setq unread-command-events
+          (append (cl-loop for i from 1 to 4
+                           collect (list 'mouse-movement
+                                         (excal-test--posn
+                                          (+ x0 (/ (* i (- x1 x0)) 4))
+                                          (+ y0 (/ (* i (- y1 y0)) 4)))))
+                  (list (list 'drag-mouse-1 start (excal-test--posn x1 y1)))))
+    (excal-mouse-down
+     (list (event-convert-list (append modifiers '(down-mouse-1))) start))))
+
+(defmacro excal-test--in-window (&rest body)
+  "Run BODY in an excal-like buffer shown in the selected window."
+  `(let ((buffer (generate-new-buffer " *excal-test*")))
+     (unwind-protect
+         (save-window-excursion
+           (switch-to-buffer buffer)
+           (setq excal--native-cache (make-hash-table :test #'eq)
+                 excal--zoom 1.0 excal--pixel-scale 1.0
+                 excal--scroll-x 0.0 excal--scroll-y 0.0
+                 excal--backend nil excal--tool 'select
+                 excal--selection nil excal--editing-group nil)
+           ,@body)
+       (kill-buffer buffer))))
+
+(ert-deftest excal-test-gesture-box-select-then-move-from-gap ()
+  "Box-select two shapes, then drag from the gap between them to move both."
+  (excal-test--in-window
+   (let ((a (excal-test--rect 10 10)) (b (excal-test--rect 50 10)))
+     (setq excal--elements (list a b))
+     ;; Box selection from empty space around both.
+     (excal-test--drag 0 0 70 30)
+     (should (equal excal--selection (list a b)))
+     ;; Press in the gap at x=35, which hits neither shape, and drag.
+     (should-not (excal--hit '(35.0 . 15.0)))
+     (excal-test--drag 35 15 55 45)
+     (should (equal excal--selection (list a b)))
+     (should (equal (list (excal--get a 'x) (excal--get a 'y)) '(30.0 40.0)))
+     (should (equal (list (excal--get b 'x) (excal--get b 'y)) '(70.0 40.0))))))
+
+(ert-deftest excal-test-gesture-click-outside-box-deselects ()
+  "Pressing outside the selection box starts a new box selection."
+  (excal-test--in-window
+   (let ((a (excal-test--rect 10 10)) (b (excal-test--rect 50 10)))
+     (setq excal--elements (list a b))
+     (excal--select (list a b))
+     (excal-test--drag 200 200 210 210)
+     (should (null excal--selection))
+     (should (= (excal--get a 'x) 10.0)))))
+
+(ert-deftest excal-test-gesture-drag-unselected-shape ()
+  "Dragging an unselected shape selects and moves only it."
+  (excal-test--in-window
+   (let ((a (excal-test--rect 10 10)) (b (excal-test--rect 50 10)))
+     (setq excal--elements (list a b))
+     (excal--select (list a))
+     (excal-test--drag 55 15 65 25)
+     (should (equal excal--selection (list b)))
+     (should (= (excal--get a 'x) 10.0))
+     (should (= (excal--get b 'x) 60.0)))))
+
+(ert-deftest excal-test-gesture-shift-click-adds ()
+  "Shift-clicking a shape adds it to the selection."
+  (excal-test--in-window
+   (let ((a (excal-test--rect 10 10)) (b (excal-test--rect 50 10)))
+     (setq excal--elements (list a b))
+     (excal--select (list a))
+     (excal-test--drag 55 15 55 15 '(shift))
+     (should (equal excal--selection (list a b))))))
+
 ;;; excal-test.el ends here

@@ -72,6 +72,15 @@ with `draw_selection' in excal-render.c."
                             (<= (abs (- (cddr handle) (cdr scene-xy))) radius)))
                      (excal--selection-handles)))))
 
+(defun excal--in-selection-box-p (scene-xy)
+  "Return non-nil if SCENE-XY lies inside the drawn selection box.
+The box is the selection bounds padded like `draw_selection'."
+  (when-let* ((bounds (excal--selection-bounds)))
+    (pcase-let ((`(,x1 ,y1 ,x2 ,y2) bounds)
+                (pad (/ 6.0 excal--zoom)))
+      (and (<= (- x1 pad) (car scene-xy) (+ x2 pad))
+           (<= (- y1 pad) (cdr scene-xy) (+ y2 pad))))))
+
 ;;;; Damage helpers
 
 (defun excal--scene-rect-damage (rect)
@@ -194,7 +203,8 @@ move or crosshair pointer, so corners use `hdrag' and elements `hand'."
      (let ((handle (excal--hit-handle scene-xy)))
        (cond ((memq handle '(n s)) 'nhdrag)
              (handle 'hdrag)
-             ((excal--hit scene-xy) 'hand)
+             ((or (excal--hit scene-xy) (excal--in-selection-box-p scene-xy))
+              'hand)
              (t 'arrow))))
     ('hand 'hand)
     ('text 'text)
@@ -342,6 +352,12 @@ adds to it."
            (excal--render)
            (when (excal--selected-p hit)
              (excal--move-drag start)))
+          ((and (not shift)
+                (or (null hit) (excal--selected-p hit))
+                (excal--in-selection-box-p start))
+           ;; Like Excalidraw: pressing anywhere inside the selection box,
+           ;; including the gaps between elements, drags the selection.
+           (excal--move-drag start))
           (hit
            (unless (excal--selected-p hit)
              ;; Clicking outside the entered group leaves it.
