@@ -36,6 +36,8 @@ enum {
 	SLOT_TEXT_ALIGN,
 	SLOT_LINE_HEIGHT,
 	SLOT_ROUNDED,
+	SLOT_START_ARROWHEAD,
+	SLOT_END_ARROWHEAD,
 	SLOT_COUNT,
 };
 
@@ -97,6 +99,8 @@ static void free_element(ExcalElement *e)
 	free(e->points);
 	free(e->text);
 	free(e->text_align);
+	free(e->start_arrowhead);
+	free(e->end_arrowhead);
 }
 
 static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
@@ -137,6 +141,8 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->text_align = get_string(env, SLOT(SLOT_TEXT_ALIGN));
 	e->line_height = get_number(env, SLOT(SLOT_LINE_HEIGHT), 1.25);
 	e->rounded = env->is_not_nil(env, SLOT(SLOT_ROUNDED));
+	e->start_arrowhead = get_string(env, SLOT(SLOT_START_ARROWHEAD));
+	e->end_arrowhead = get_string(env, SLOT(SLOT_END_ARROWHEAD));
 #undef SLOT
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }

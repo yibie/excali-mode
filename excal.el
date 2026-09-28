@@ -15,6 +15,7 @@
 (require 'excal-core)
 (require 'excal-view)
 (require 'excal-select)
+(require 'excal-style)
 (require 'excal-edit)
 (require 'excal-history)
 (require 'excal-clipboard)
@@ -47,6 +48,7 @@
   "p" (excal--tool-command freedraw)
   "t" (excal--tool-command text)
   "h" (excal--tool-command hand)
+  "s" #'excal-style
   "<escape>" #'excal-escape
   ;; Emacs bindings first, then macOS Command-key equivalents.
   "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo "s-z" #'excal-undo
@@ -105,6 +107,7 @@
     (setq excal--file file
           excal--doc doc
           excal--elements (append (alist-get 'elements doc) nil))
+    (excal--load-current-style (alist-get 'appState doc))
     (excal--history-reset)
     (excal--sync-canvas (selected-window))
     buffer))

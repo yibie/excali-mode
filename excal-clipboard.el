@@ -14,6 +14,7 @@
 (require 'excal-core)
 (require 'excal-view)
 (require 'excal-select)
+(require 'excal-style)
 
 (defconst excal-clipboard-type "excalidraw/clipboard"
   "Value of the `type' field of Excalidraw clipboard data.")
@@ -154,7 +155,8 @@ mouse is not over the canvas."
         (dolist (e clones) (excal--translate e dx dy))
         (excal--insert-elements clones)))
      ((and (stringp text) (not (string-empty-p text)))
-      (let ((element (excal--make-text-element (car target) (cdr target) text)))
+      (let ((element (excal--apply-current-style
+                      (excal--make-text-element (car target) (cdr target) text))))
         (excal--insert-elements (list element))))
      (t (message "Clipboard is empty")))
     (excal--render)))

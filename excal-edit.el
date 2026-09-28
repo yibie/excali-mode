@@ -11,6 +11,7 @@
 (require 'excal-core)
 (require 'excal-view)
 (require 'excal-select)
+(require 'excal-style)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -376,9 +377,8 @@ adds to it."
       ('hand
        (excal--pan-drag event 'mouse-1))
       ((and tool (or 'rectangle 'ellipse 'diamond))
-       (let ((element (excal--make-element (symbol-name tool) sx sy)))
-         (when (eq tool 'rectangle)
-           (excal--put element 'roundness (list (cons 'type 3))))
+       (let ((element (excal--apply-current-style
+                       (excal--make-element (symbol-name tool) sx sy))))
          (setq excal--elements (append excal--elements (list element)))
          (excal--deselect)
          (excal--select (list element))
@@ -393,13 +393,12 @@ adds to it."
                 (excal--touch element)))))
          (setq excal--tool 'select)))
       ((and tool (or 'arrow 'line))
-       (let ((element (excal--make-element
-                       (symbol-name tool) sx sy
-                       (cons 'points (vector [0.0 0.0] [0.0 0.0]))
-                       (cons 'roundness (list (cons 'type 2)))
-                       (cons 'startBinding :null) (cons 'endBinding :null)
-                       (cons 'startArrowhead :null)
-                       (cons 'endArrowhead (if (eq tool 'arrow) "arrow" :null)))))
+       (let ((element (excal--apply-current-style
+                       (excal--make-element
+                        (symbol-name tool) sx sy
+                        (cons 'points (vector [0.0 0.0] [0.0 0.0]))
+                        (cons 'startBinding :null) (cons 'endBinding :null)
+                        (cons 'startArrowhead :null) (cons 'endArrowhead :null)))))
          (setq excal--elements (append excal--elements (list element)))
          (excal--deselect)
          (excal--select (list element))
@@ -414,9 +413,10 @@ adds to it."
          (setq excal--tool 'select)))
       ('freedraw
        (let* ((points (list [0.0 0.0]))
-              (element (excal--make-element
-                        "freedraw" sx sy (cons 'points (vconcat points))
-                        (cons 'pressures []) (cons 'simulatePressure t))))
+              (element (excal--apply-current-style
+                        (excal--make-element
+                         "freedraw" sx sy (cons 'points (vconcat points))
+                         (cons 'pressures []) (cons 'simulatePressure t)))))
          (setq excal--elements (append excal--elements (list element)))
          (excal--deselect)
          (excal--drag-loop
@@ -512,7 +512,7 @@ restores the original text."
 
 (defun excal--insert-text (x y)
   "Create a text element at scene X, Y and edit it in place."
-  (let ((element (excal--make-text-element x y "")))
+  (let ((element (excal--apply-current-style (excal--make-text-element x y ""))))
     (setq excal--elements (append excal--elements (list element)))
     (excal--deselect)
     (excal--select (list element))

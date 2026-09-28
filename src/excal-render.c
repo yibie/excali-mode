@@ -464,21 +464,88 @@ static void stroke_linear(cairo_t *cr, Rough *r, const ExcalElement *e,
 			           abs_pts[2 * i + 2], abs_pts[2 * i + 3],
 			           multi);
 	}
-	if (e->type == EXCAL_ARROW) {
-		double ex = abs_pts[2 * n], ey = abs_pts[2 * n + 1];
-		double px = abs_pts[2 * n - 2], py = abs_pts[2 * n - 1];
-		double seg = hypot(ex - px, ey - py);
-		if (seg > 0.01) {
-			double size = fmin(30, seg / 2);
-			double base = atan2(ey - py, ex - px) + M_PI;
-			for (int side = -1; side <= 1; side += 2) {
-				double a = base + side * 20 * M_PI / 180;
-				rough_line(cr, r, ex + cos(a) * size,
-				           ey + sin(a) * size, ex, ey, multi);
-			}
-		}
-	}
 	free(abs_pts);
+}
+
+/* Draw arrowhead KIND with its tip at TX,TY, pointing away from FX,FY.
+   Sizes follow Excalidraw's getArrowheadSize/getArrowheadAngle.  */
+static void draw_arrowhead(cairo_t *cr, Rough *r, const ExcalElement *e,
+                           const char *kind, double tx, double ty, double fx,
+                           double fy, const Rgba *stroke, bool multi)
+{
+	double seg = hypot(tx - fx, ty - fy);
+	if (!kind || seg < 0.01)
+		return;
+	bool diamond = strncmp(kind, "diamond", 7) == 0;
+	bool outline = strstr(kind, "_outline") != NULL;
+	double size = strcmp(kind, "arrow") == 0 ? 25 : diamond ? 12 : 15;
+	size = fmin(size, seg * (diamond ? 0.25 : 0.5));
+	double ux = (tx - fx) / seg, uy = (ty - fy) / seg;
+	double px = -uy, py = ux; /* Perpendicular.  */
+
+	cairo_save(cr);
+	cairo_set_dash(cr, NULL, 0, 0);
+	cairo_new_path(cr);
+	if (strcmp(kind, "bar") == 0) {
+		rough_line(cr, r, tx + px * size, ty + py * size,
+		           tx - px * size, ty - py * size, multi);
+		cairo_stroke(cr);
+	} else if (strncmp(kind, "triangle", 8) == 0 ||
+	           strncmp(kind, "circle", 6) == 0 || diamond) {
+		if (strncmp(kind, "circle", 6) == 0) {
+			cairo_arc(cr, tx - ux * size / 2, ty - uy * size / 2,
+			          size / 2, 0, 2 * M_PI);
+		} else if (diamond) {
+			double bx = tx - ux * size * 2, by = ty - uy * size * 2;
+			double mx = tx - ux * size, my = ty - uy * size;
+			cairo_move_to(cr, tx, ty);
+			cairo_line_to(cr, mx + px * size / 2, my + py * size / 2);
+			cairo_line_to(cr, bx, by);
+			cairo_line_to(cr, mx - px * size / 2, my - py * size / 2);
+			cairo_close_path(cr);
+		} else {
+			double a = 25 * M_PI / 180;
+			double ca = cos(a), sa = sin(a);
+			cairo_move_to(cr, tx, ty);
+			cairo_line_to(cr, tx - size * (ux * ca - px * sa),
+			              ty - size * (uy * ca - py * sa));
+			cairo_line_to(cr, tx - size * (ux * ca + px * sa),
+			              ty - size * (uy * ca + py * sa));
+			cairo_close_path(cr);
+		}
+		/* Outlines are filled with the canvas so the line stays hidden.  */
+		if (outline)
+			cairo_set_source_rgb(cr, 1, 1, 1);
+		cairo_fill_preserve(cr);
+		cairo_set_source_rgba(cr, stroke->r, stroke->g, stroke->b,
+		                      stroke->a);
+		cairo_stroke(cr);
+	} else {
+		/* "arrow", and a fallback for kinds not drawn yet.  */
+		double a = 20 * M_PI / 180;
+		double ca = cos(a), sa = sin(a);
+		for (int side = -1; side <= 1; side += 2)
+			rough_line(cr, r,
+			           tx - size * (ux * ca + side * px * sa),
+			           ty - size * (uy * ca + side * py * sa), tx, ty,
+			           multi);
+		cairo_stroke(cr);
+	}
+	cairo_restore(cr);
+}
+
+static void draw_arrowheads(cairo_t *cr, Rough *r, const ExcalElement *e,
+                            const Rgba *stroke, bool multi)
+{
+	size_t n = e->point_count;
+	if (n < 2)
+		return;
+	const double *p = e->points;
+	draw_arrowhead(cr, r, e, e->end_arrowhead, e->x + p[2 * n - 2],
+	               e->y + p[2 * n - 1], e->x + p[2 * n - 4],
+	               e->y + p[2 * n - 3], stroke, multi);
+	draw_arrowhead(cr, r, e, e->start_arrowhead, e->x + p[0], e->y + p[1],
+	               e->x + p[2], e->y + p[3], stroke, multi);
 }
 
 static void stroke_freedraw(cairo_t *cr, const ExcalElement *e)
@@ -599,6 +666,7 @@ static void draw_element(cairo_t *cr, const ExcalElement *e)
 			                      stroke.a);
 			stroke_linear(cr, &rough, e, multi);
 			cairo_stroke(cr);
+			draw_arrowheads(cr, &rough, e, &stroke, multi);
 		}
 		break;
 	case EXCAL_FREEDRAW:

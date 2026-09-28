@@ -37,6 +37,8 @@ typedef struct {
 	double font_size;
 	int font_family;
 	char *text_align;
+	char *start_arrowhead; /* NULL for none.  */
+	char *end_arrowhead;
 	double line_height;
 	double opacity; /* 0..100 */
 	/* 0: not selected, 1: selection box, 2: box with resize handles.  */

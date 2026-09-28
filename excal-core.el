@@ -31,6 +31,7 @@
 (declare-function excal-native-layer-set-geometry "excal-module")
 (declare-function excal-native-layer-present "excal-module")
 (declare-function excal-native-layer-flush "excal-module")
+(declare-function excal--save-current-style "excal-style")
 
 (defgroup excal nil
   "Excalidraw scenes on Emacs Canvas."
@@ -109,6 +110,9 @@
                                       "untitled.excalidraw")))
   (let ((doc (copy-alist excal--doc)))
     (setf (alist-get 'elements doc) (vconcat excal--elements))
+    (when (fboundp 'excal--save-current-style)
+      (setf (alist-get 'appState doc)
+            (excal--save-current-style (alist-get 'appState doc))))
     (unless (alist-get 'files doc) (setf (alist-get 'files doc) (list)))
     (with-temp-file excal--file
       (setq buffer-file-coding-system 'utf-8-unix)

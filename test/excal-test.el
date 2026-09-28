@@ -693,4 +693,72 @@ MODIFIERS, such as (shift), are added to the press event."
      (excal-test--drag 55 15 55 15 '(shift))
      (should (equal excal--selection (list a b))))))
 
+;; Style
+
+(ert-deftest excal-test-style-app-state-roundtrip ()
+  "currentItem* app state loads into the current style and saves back."
+  (excal-test--with-scene
+   (excal--load-current-style '((currentItemStrokeColor . "#e03131")
+                                (currentItemEndArrowhead . :null)
+                                (viewBackgroundColor . "#ffffff")))
+   (should (equal (excal--style-value 'strokeColor) "#e03131"))
+   (should (null (excal--style-value 'endArrowhead)))
+   (should (equal (excal--style-value 'fontSize) 20))
+   (excal-set-style 'fontSize 28)
+   (let ((saved (excal--save-current-style '((currentItemStrokeColor . "#e03131")
+                                             (currentItemEndArrowhead . :null)
+                                             (viewBackgroundColor . "#ffffff")))))
+     (should (equal (alist-get 'currentItemStrokeColor saved) "#e03131"))
+     (should (eq (alist-get 'currentItemEndArrowhead saved) :null))
+     (should (equal (alist-get 'currentItemFontSize saved) 28))
+     ;; Untouched defaults are not added.
+     (should-not (assq 'currentItemFillStyle saved))
+     (should (equal (alist-get 'viewBackgroundColor saved) "#ffffff")))))
+
+(ert-deftest excal-test-style-applies-to-matching-elements ()
+  "A property changes only the selected elements it applies to."
+  (excal-test--with-elements
+      ((box (excal-test--rect 0 0))
+       (label (excal--make-text-element 0 30 "Hello")))
+    (setq excal--backend nil)
+    (excal--select (list box label))
+    (let ((old-width (excal--get label 'width)))
+      (excal-set-style 'fontSize 40)
+      (should (= (excal--get label 'fontSize) 40))
+      (should (> (excal--get label 'width) old-width))
+      (should-not (assq 'fontSize box)))
+    (excal-set-style 'backgroundColor "#a5d8ff")
+    (should (equal (excal--get box 'backgroundColor) "#a5d8ff"))
+    (should (equal (excal--get label 'backgroundColor) "transparent"))
+    (excal-set-style 'strokeColor "#1971c2")
+    (should (equal (excal--get label 'strokeColor) "#1971c2"))
+    (excal-set-style 'roundness "sharp")
+    (should (eq (alist-get 'roundness box) :null))
+    ;; The panel reports mixed values across the selection.
+    (excal--set-element-style box 'opacity 50)
+    (should (eq (excal--shown-style-value 'opacity) 'mixed))
+    (should (string-match-p "mixed" (excal--style-description 'opacity)))))
+
+(ert-deftest excal-test-new-elements-take-current-style ()
+  "New elements get the current style, with the right roundness type."
+  (excal-test--with-scene
+   (excal--load-current-style nil)
+   (excal-set-style 'strokeWidth 4)
+   (excal-set-style 'endArrowhead "triangle")
+   (let ((rect (excal--apply-current-style (excal--make-element "rectangle" 0 0)))
+         (arrow (excal--apply-current-style
+                 (excal--make-element "arrow" 0 0 (cons 'points [[0.0 0.0] [9.0 0.0]]))))
+         (line (excal--apply-current-style
+                (excal--make-element "line" 0 0 (cons 'points [[0.0 0.0] [9.0 0.0]])))))
+     (should (= (excal--get rect 'strokeWidth) 4))
+     (should (equal (excal--get rect 'roundness) '((type . 3))))
+     (should (equal (excal--get arrow 'roundness) '((type . 2))))
+     (should (equal (excal--get arrow 'endArrowhead) "triangle"))
+     (should-not (excal--get line 'endArrowhead))
+     (excal-set-style 'roundness "sharp")
+     (should (eq (alist-get 'roundness
+                            (excal--apply-current-style
+                             (excal--make-element "diamond" 0 0)))
+                 :null)))))
+
 ;;; excal-test.el ends here
