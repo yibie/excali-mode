@@ -15,4 +15,9 @@ bool excal_overlay_p(ExcalType type);
    lengths are in screen pixels, so overlays look the same at any ZOOM.  */
 void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom);
 
+/* Draw grid overlay E, which covers the visible scene; it goes below the
+   elements.  PIXEL_SCALE is device pixels per screen pixel.  */
+void excal_draw_grid(cairo_t *cr, const ExcalElement *e, double zoom,
+                     double pixel_scale);
+
 #endif /* EXCAL_OVERLAY_H */

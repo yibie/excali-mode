@@ -25,6 +25,7 @@
 (require 'excal-create)
 (require 'excal-actions)
 (require 'excal-linear)
+(require 'excal-snap)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -139,6 +140,7 @@ or deselect."
   "<prior>" #'excal-page-up "<next>" #'excal-page-down
   "S-<prior>" #'excal-page-left "S-<next>" #'excal-page-right
   ;; Files and debugging.
+  "s-'" #'excal-toggle-grid "M-s" #'excal-toggle-objects-snap
   "s-s" #'excal-save "C-x C-s" #'excal-save
   "C-c C-b" #'excal-cycle-backend
   "C-c C-p" #'excal-toggle-pixel-scale
@@ -176,6 +178,7 @@ or deselect."
           excal--doc doc
           excal--elements (append (alist-get 'elements doc) nil))
     (excal--load-current-style (alist-get 'appState doc))
+    (excal--load-grid-state (alist-get 'appState doc))
     (excal--history-reset)
     (excal--sync-canvas (selected-window))
     buffer))

@@ -18,6 +18,7 @@
 (require 'excal-create)
 (require 'excal-binding)
 (require 'excal-linear)
+(require 'excal-snap)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -135,12 +136,16 @@ Return the release event, or nil if another event ended the drag."
   "Return ELEMENTS plus the arrows bound to them."
   (seq-union elements (excal--bound-arrows elements)))
 
-(defun excal--move-drag (start)
+(defun excal--move-drag (start &optional super)
   "Move the selection with the mouse from scene point START.
 Arrows bound to moved shapes follow.  A lone bound arrow stays until it
 is dragged past `excal--dragging-threshold', so clicking it does not
-unbind it; moved arrows let go of shapes that stay behind."
+unbind it; moved arrows let go of shapes that stay behind.  The grid
+snaps the top-left of the moved bounds; object snapping aligns with
+other elements.  SUPER, held at the press, suppresses the grid and
+inverts object snapping."
   (let* ((elements excal--selection)
+         (top-left (let ((b (excal--elements-bounds elements))) (cons (nth 0 b) (nth 1 b))))
          (affected (excal--with-bound-arrows elements))
          (origins (mapcar (lambda (e) (cons (excal--get e 'x) (excal--get e 'y)))
                           elements))
@@ -152,7 +157,14 @@ unbind it; moved arrows let go of shapes that stay behind."
     (excal--drag-loop
      (lambda (ev)
        (let* ((p (excal--event-scene-xy ev))
-              (dx (- (car p) (car start))) (dy (- (cdr p) (cdr start))))
+              (dx (- (car p) (car start))) (dy (- (cdr p) (cdr start)))
+              (corner (excal--grid-point (cons (+ (car top-left) dx) (+ (cdr top-left) dy))
+                                         super))
+              (dx (- (car corner) (car top-left))) (dy (- (cdr corner) (cdr top-left)))
+              (snapped (if (excal--grid-active-p super)
+                           (cons dx dy)
+                         (excal--snap-move elements dx dy super)))
+              (dx (car snapped)) (dy (cdr snapped)))
          (when (or moved (not hold)
                    (> (max (abs dx) (abs dy)) excal--dragging-threshold))
            (setq moved t)
@@ -163,6 +175,7 @@ unbind it; moved arrows let go of shapes that stay behind."
                         (excal--touch e))
                       elements origins)
              (excal--update-bound-arrows elements elements))))))
+    (setq excal--snap-lines nil)
     (when moved
       (excal--release-moved-arrows elements))))
 
@@ -198,7 +211,8 @@ the handle's reference point is kept so the shape does not jump."
     (excal--drag-loop
      (lambda (ev)
        (let* ((p (excal--event-scene-xy ev))
-              (pointer (cons (+ (car p) (car offset)) (+ (cdr p) (cdr offset)))))
+              (pointer (excal--grid-point (cons (+ (car p) (car offset))
+                                                (+ (cdr p) (cdr offset))))))
          (excal--with-elements-damage elements
            (cond
             ((and (eq handle 'rotation) (cdr geometries))
@@ -262,13 +276,13 @@ adds to it."
            (excal--toggle-unit hit)
            (excal--render)
            (when (excal--selected-p hit)
-             (excal--move-drag start)))
+             (excal--move-drag start (memq 'super (event-modifiers event)))))
           ((and (not shift)
                 (or (null hit) (excal--selected-p hit))
                 (excal--in-selection-box-p start))
            ;; Like Excalidraw: pressing anywhere inside the selection box,
            ;; including the gaps between elements, drags the selection.
-           (excal--move-drag start))
+           (excal--move-drag start (memq 'super (event-modifiers event))))
           (hit
            (unless (excal--selected-p hit)
              ;; Clicking outside the entered group leaves it.
@@ -279,7 +293,7 @@ adds to it."
              (setq excal--selection nil)
              (excal--select (excal--unit hit)))
            (excal--render)
-           (excal--move-drag start))
+           (excal--move-drag start (memq 'super (event-modifiers event))))
           (t
            (unless shift (excal--deselect))
            (excal--render)
@@ -463,7 +477,10 @@ LARGE selects `excal-nudge-large-step' instead of `excal-nudge-step'."
               (cond ((< dx 0) "left") ((> dx 0) "right") ((< dy 0) "up") (t "down"))
               (if large "excal-nudge-large-step" "excal-nudge-step"))
      (interactive)
-     (let ((step ,(if large 'excal-nudge-large-step 'excal-nudge-step)))
+     ;; With the grid on, plain arrows step by the grid and shift by 1.
+     (let ((step (if excal--grid-enabled
+                     ,(if large 1 'excal--grid-size)
+                   ,(if large 'excal-nudge-large-step 'excal-nudge-step))))
        (excal--nudge (* ,dx step) (* ,dy step)))))
 
 (excal--define-nudge excal-nudge-left -1 0 nil)

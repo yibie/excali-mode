@@ -681,6 +681,11 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 		sy2[r] = (regions[r].y + regions[r].height) / scale -
 		         view->scroll_y;
 	}
+	/* The grid overlay goes below everything.  */
+	for (size_t i = 0; i < count; ++i)
+		if (elements[i].type == EXCAL_OV_GRID)
+			excal_draw_grid(cr, &elements[i], view->zoom,
+			                view->pixel_scale);
 	bool *visible = calloc(count ? count : 1, sizeof *visible);
 	size_t drawn = 0;
 	for (size_t i = 0; i < count; ++i) {

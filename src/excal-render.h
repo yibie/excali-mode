@@ -22,6 +22,8 @@ typedef enum {
 	EXCAL_OV_CIRCLE, /* Rotation handle or linear point.  */
 	EXCAL_OV_ELLIPSE, /* Rotated ellipse outline (binding highlight).  */
 	EXCAL_OV_DIAMOND, /* Rotated diamond outline (binding highlight).  */
+	EXCAL_OV_POLY,    /* Polyline through the element's points (snap lines).  */
+	EXCAL_OV_GRID,    /* Background grid over the element's box, below all.  */
 	EXCAL_UNKNOWN,
 } ExcalType;
 

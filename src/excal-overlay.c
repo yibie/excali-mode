@@ -10,6 +10,9 @@
  *   ov-circle  a circle inscribed in x, y, width, height.
  *   ov-ellipse, ov-diamond
  *              outlines inscribed in the rotated rect, like ov-rect.
+ *   ov-poly    a polyline through `points' (relative to x, y).
+ *   ov-grid    the background grid over x, y, width, height, with the
+ *              grid size in strokeWidth and the bold-line step in fontSize.
  */
 
 #include "excal-overlay.h"
@@ -22,7 +25,8 @@ bool excal_overlay_p(ExcalType type)
 {
 	return type == EXCAL_OV_RECT || type == EXCAL_OV_HANDLE ||
 	       type == EXCAL_OV_CIRCLE || type == EXCAL_OV_ELLIPSE ||
-	       type == EXCAL_OV_DIAMOND;
+	       type == EXCAL_OV_DIAMOND || type == EXCAL_OV_POLY ||
+	       type == EXCAL_OV_GRID;
 }
 
 /* Set the source to "#rrggbb" or "#rrggbbaa" S; return false for none.  */
@@ -72,6 +76,8 @@ static void rounded_rect(cairo_t *cr, double x, double y, double w, double h,
 
 void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom)
 {
+	if (e->type == EXCAL_OV_GRID)
+		return; /* Drawn below the elements by excal_draw_grid.  */
 	double x = e->x, y = e->y, w = e->width, h = e->height;
 	cairo_save(cr);
 	cairo_new_path(cr);
@@ -98,6 +104,15 @@ void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom)
 		cairo_arc(cr, 0, 0, 1, 0, 2 * M_PI);
 		cairo_restore(cr);
 		break;
+	case EXCAL_OV_POLY:
+		for (size_t i = 0; i < e->point_count; ++i) {
+			double px = x + e->points[2 * i], py = y + e->points[2 * i + 1];
+			if (i == 0)
+				cairo_move_to(cr, px, py);
+			else
+				cairo_line_to(cr, px, py);
+		}
+		break;
 	case EXCAL_OV_DIAMOND:
 		cairo_move_to(cr, x + w / 2, y);
 		cairo_line_to(cr, x + w, y + h / 2);
@@ -113,5 +128,55 @@ void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom)
 	if (set_color(cr, e->stroke_color))
 		cairo_stroke(cr);
 	cairo_new_path(cr);
+	cairo_restore(cr);
+}
+
+/* Upstream strokeGrid: lines at multiples of the grid size, every STEP-th
+   one solid #dddddd, the rest dashed #e5e5e5 and hidden when closer than
+   10 screen px; all one device pixel wide and pixel-aligned.  */
+void excal_draw_grid(cairo_t *cr, const ExcalElement *e, double zoom,
+                     double pixel_scale)
+{
+	double size = e->stroke_width;
+	int step = (int)e->font_size;
+	if (size < 1)
+		return;
+	double device = zoom * pixel_scale; /* Device pixels per scene unit.  */
+	double width = 1 / device;
+	bool minor = size * zoom >= 10;
+	double x1 = floor(e->x / size) * size, y1 = floor(e->y / size) * size;
+	double x2 = e->x + e->width, y2 = e->y + e->height;
+	cairo_save(cr);
+	cairo_set_line_width(cr, width);
+	for (int axis = 0; axis < 2; ++axis) {
+		double from = axis ? y1 : x1, to = axis ? y2 : x2;
+		for (double v = from; v <= to + size; v += size) {
+			long index = lround(v / size);
+			bool bold = step > 1 && index % step == 0;
+			if (!bold && !minor)
+				continue;
+			/* Center a one-device-pixel line on a device pixel.  */
+			double pos = (floor(v * device) + 0.5) / device;
+			if (bold) {
+				cairo_set_dash(cr, NULL, 0, 0);
+				cairo_set_source_rgb(cr, 0xdd / 255.0, 0xdd / 255.0,
+				                     0xdd / 255.0);
+			} else {
+				double space = 1 / zoom;
+				double dash[] = {width * 3, space + width + space};
+				cairo_set_dash(cr, dash, 2, 0);
+				cairo_set_source_rgb(cr, 0xe5 / 255.0, 0xe5 / 255.0,
+				                     0xe5 / 255.0);
+			}
+			if (axis) {
+				cairo_move_to(cr, x1 - size, pos);
+				cairo_line_to(cr, x2 + size, pos);
+			} else {
+				cairo_move_to(cr, pos, y1 - size);
+				cairo_line_to(cr, pos, y2 + size);
+			}
+			cairo_stroke(cr);
+		}
+	}
 	cairo_restore(cr);
 }

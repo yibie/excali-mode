@@ -27,6 +27,7 @@
 (require 'excal-hit)
 (require 'excal-transform)
 (require 'excal-binding)
+(require 'excal-snap)
 
 (defconst excal--minimum-arrow-size 20
   "MINIMUM_ARROW_SIZE, screen px: shorter linear drags start click-click mode.")
@@ -90,7 +91,7 @@ See `excal--drag-box' for SQUARE and FROM-CENTER."
     (excal--deselect)
     (excal--drag-loop
      (lambda (ev)
-       (let ((p (excal--event-scene-xy ev)))
+       (let ((p (excal--grid-point (excal--event-scene-xy ev))))
          (excal--with-damage element
            (pcase-let ((`(,x ,y ,w ,h) (excal--drag-box (car start) (cdr start)
                                                         (car p) (cdr p)
@@ -174,7 +175,7 @@ click-click mode instead of finishing."
     (excal--deselect)
     (excal--drag-loop
      (lambda (ev)
-       (let* ((p (excal--event-scene-xy ev))
+       (let* ((p (excal--grid-point (excal--event-scene-xy ev)))
               (d (cons (- (car p) (car start)) (- (cdr p) (cdr start))))
               (d (if lock-angle (excal--lock-angle (car d) (cdr d)) d)))
          (excal--damage-union
@@ -286,8 +287,11 @@ points is discarded."
 ;;;; Dispatch
 
 (defun excal--create (tool event start)
-  "Create an element with TOOL for the press EVENT at scene point START."
-  (let ((mods (event-modifiers event)))
+  "Create an element with TOOL for the press EVENT at scene point START.
+With the grid on the start snaps to it, unless super is held."
+  (let* ((mods (event-modifiers event))
+         (start (if (eq tool 'freedraw) start
+                  (excal--grid-point start (memq 'super mods)))))
     (pcase tool
       ((or 'rectangle 'ellipse 'diamond)
        (excal--create-shape (symbol-name tool) start (memq 'shift mods) (memq 'meta mods)))
