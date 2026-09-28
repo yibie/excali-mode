@@ -198,6 +198,10 @@ static void draw_element(cairo_t *cr, const ExcalElement *e,
 		cairo_push_group(cr);
 
 	if (shaped) {
+		/* TODO(merge with the text track): for arrows with a bound
+		   label, call excal_text_clip_label_hole(cr, e) here, before
+		   the translation below, so the even-odd label hole clips the
+		   shaft and heads; cairo_restore below undoes it.  */
 		cairo_translate(cr, e->x, e->y);
 		if (shape.butt_caps) {
 			cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);

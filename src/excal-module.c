@@ -668,16 +668,17 @@ static emacs_value make_str(emacs_env *env, const char *s)
 }
 
 /* (excal-native-element-shape ELEMENT)
-   Return [DRAWABLES OUTLINE COORDS] for the native element vector
+   Return [DRAWABLES OUTLINE COORDS PADDING] for the native element vector
    ELEMENT, as generated for rendering.  DRAWABLES is a vector of
    [SHAPE SETS FILL] where SHAPE names the roughjs generator, FILL is
    "element", "stroke" or "canvas", and SETS is a vector of [TYPE OPS]
    with TYPE "path", "fillPath" or "fillSketch" and OPS a vector of
    ["move" X Y], ["lineTo" X Y] or ["bcurveTo" X1 Y1 X2 Y2 X Y].
    OUTLINE is the freedraw outline as [QX QY EX EY ...] (quadratic
-   control and end points), and COORDS is getElementAbsoluteCoords
-   [X1 Y1 X2 Y2 CX CY] in scene coordinates.  All ops are relative to
-   the element's x, y.  */
+   control and end points), COORDS is getElementAbsoluteCoords
+   [X1 Y1 X2 Y2 CX CY] in scene coordinates, and PADDING is how far
+   past its box or points the renderer assumes the element may draw
+   (for culling).  All ops are relative to the element's x, y.  */
 static emacs_value Fexcal_native_element_shape(emacs_env *env, ptrdiff_t nargs,
                                                emacs_value *args, void *data)
 {
@@ -714,13 +715,14 @@ static emacs_value Fexcal_native_element_shape(emacs_env *env, ptrdiff_t nargs,
 	double coords[6] = {
 	        e.x + shape.x1, e.y + shape.y1, e.x + shape.x2, e.y + shape.y2,
 	        e.x + (shape.x1 + shape.x2) / 2, e.y + (shape.y1 + shape.y2) / 2};
-	emacs_value result[3] = {
+	emacs_value result[4] = {
 	        make_vector(env, shape.count, drawables),
 	        floats_vector(env, shape.outline.xy, shape.outline.count * 2),
-	        floats_vector(env, coords, 6)};
+	        floats_vector(env, coords, 6),
+	        env->make_float(env, excal_shape_padding(&e))};
 	excal_shape_free(&shape);
 	free_element(&e);
-	return make_vector(env, 3, result);
+	return make_vector(env, 4, result);
 }
 
 /* (excal-native-rough-random SEED COUNT)
@@ -814,7 +816,8 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "ELEMENTS)");
 	bind(env, "excal-native-element-shape", Fexcal_native_element_shape, 1,
 	     "Return the generated shape of the native element vector ELEMENT.\n\n"
-	     "The result is [DRAWABLES OUTLINE COORDS]; see excal-module.c.\n\n"
+	     "The result is [DRAWABLES OUTLINE COORDS PADDING]; see\n"
+	     "excal-module.c.\n\n"
 	     "(fn ELEMENT)");
 	bind(env, "excal-native-rough-random", Fexcal_native_rough_random, 2,
 	     "Return the first COUNT numbers of roughjs' Random for SEED.\n\n"

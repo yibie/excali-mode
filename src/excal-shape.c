@@ -833,7 +833,9 @@ double excal_shape_padding(const ExcalElement *e)
 		pad += 30 + sw;
 	if (e->type == EXCAL_FREEDRAW)
 		pad += sw * 4.25 + 3;
-	if (e->type == EXCAL_TEXT || e->type == EXCAL_UNKNOWN)
+	/* Text, editor overlays and selection boxes (drawn around selected
+	   elements) keep the old generous margin.  */
+	if (e->type >= EXCAL_TEXT || e->selection > 0)
 		pad += 30;
 	return pad;
 }
