@@ -19,6 +19,9 @@
 (require 'excal-binding)
 (require 'excal-frame)
 
+(declare-function excal--elbow-p "excal-elbow")
+(declare-function excal--elbow-transformed "excal-elbow")
+
 ;;;; Units of the selection
 
 (defun excal--selection-units ()
@@ -46,7 +49,8 @@ Each element's geometry is mirrored in its own frame about its center,
 which moves to its mirrored place; rotated elements negate their angle.
 Text is moved but not mirrored."
   (when-let* ((box (excal--selection-bounds)))
-    (let ((center (excal--box-center box)))
+    (let ((center (excal--box-center box))
+          (elbows nil))
       (dolist (e excal--selection)
         (let* ((g (excal--snapshot-geometry e))
                (old (excal--box-center (plist-get g :box)))
@@ -55,13 +59,21 @@ Text is moved but not mirrored."
                       (cons (car old) (- (* 2 (cdr center)) (cdr old))))))
           (if (equal (excal--get e 'type) "text")
               (excal--move-elements (list e) (- (car new) (car old)) (- (cdr new) (cdr old)))
-            (excal--place e g
-                          (lambda (p)
-                            (if horizontal
-                                (cons (- (* 2 (car old)) (car p)) (cdr p))
-                              (cons (car p) (- (* 2 (cdr old)) (cdr p)))))
-                          (cons (- (car new) (car old)) (- (cdr new) (cdr old)))
-                          (- (plist-get g :angle))))))
+            (let* ((dx (- (car new) (car old))) (dy (- (cdr new) (cdr old)))
+                   (mirror (lambda (p)
+                             (if horizontal
+                                 (cons (- (* 2 (car old)) (car p)) (cdr p))
+                               (cons (car p) (- (* 2 (cdr old)) (cdr p)))))))
+              (excal--place e g mirror (cons dx dy) (- (plist-get g :angle)))
+              (when (excal--elbow-p e)
+                (push (list e g (lambda (p)
+                                  (let ((q (funcall mirror p)))
+                                    (cons (+ (car q) dx) (+ (cdr q) dy)))))
+                      elbows))))))
+      ;; Elbow arrows re-bind where their mirrored ends landed and route
+      ;; once every shape is in place.
+      (pcase-dolist (`(,arrow ,geometry ,map) (nreverse elbows))
+        (excal--elbow-transformed arrow geometry map t))
       (excal--follow excal--selection excal--selection))
     (excal--render)))
 

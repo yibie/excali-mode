@@ -887,6 +887,31 @@ unknown types.  TARGETS and EXISTING map ids to elements."
                                         (vector (+ (/ bw 2.0) 5) -10)
                                         (vector (+ (/ bw 2.0) 5) (+ (/ bh 2.0) 5)))))))))
 
+(declare-function excal--elbow-update "excal-elbow")
+(declare-function excal--validate-elbow-points "excal-elbow")
+
+(defun excal--restore-reroute-elbow (e)
+  "Re-route E if it is an unbound elbow arrow with non-orthogonal points.
+The route keeps E's ends; version, nonce and time stay, as upstream
+spreads `updateElbowArrowPoints' into the element without bumping it."
+  (let ((points (alist-get 'points e)))
+    (when (and (equal (alist-get 'type e) "arrow") (eq (alist-get 'elbowed e) t)
+               (not (consp (alist-get 'startBinding e)))
+               (not (consp (alist-get 'endBinding e)))
+               (fboundp 'excal--elbow-update)
+               (vectorp points) (> (length points) 1)
+               (not (excal--validate-elbow-points
+                     (mapcar (lambda (p) (vector (float (elt p 0)) (float (elt p 1))))
+                             points))))
+      (let ((kept (mapcar (lambda (key) (cons key (alist-get key e)))
+                          '(version versionNonce updated)))
+            (last (aref points (1- (length points)))))
+        (excal--elbow-update e (list :points (list (vector 0.0 0.0)
+                                                   (vector (float (elt last 0))
+                                                           (float (elt last 1))))))
+        (pcase-dolist (`(,key . ,value) kept)
+          (excal--put e key value))))))
+
 (cl-defun excal--restore-elements (elements &key existing repair-bindings
                                             delete-invisible)
   "Restore loaded ELEMENTS (a list or vector of alists); return a new list.
@@ -940,7 +965,9 @@ library payloads use :delete-invisible t, as upstream."
                                collect e)))
           (when moved (excal--sync-moved-indices moved normalized))
           (setq result normalized))
-        (dolist (e result) (excal--restore-fix-self-bound-elbow e map))))
+        (dolist (e result)
+          (excal--restore-reroute-elbow e)
+          (excal--restore-fix-self-bound-elbow e map))))
     result))
 
 ;;;; App state and documents
