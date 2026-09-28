@@ -247,14 +247,37 @@ With ADD, extend the existing selection instead of replacing it."
 
 ;;;; Mouse commands
 
+(declare-function excal--lasso-drag "excal-tools")
+(declare-function excal--laser-drag "excal-tools")
+(declare-function excal--bucket-click "excal-bucket")
+
 (defun excal-mouse-down (event)
   "Start the current tool's drag at EVENT.
 With shift, clicking toggles elements in the selection and box selection
 adds to it."
   (interactive "e")
   (let* ((start (excal--event-scene-xy event))
-         (shift (memq 'shift (event-modifiers event))))
-    (pcase excal--tool
+         (mods (event-modifiers event))
+         (shift (memq 'shift mods))
+         ;; Mod+Alt from the selection tool, or the lasso tool off any
+         ;; element and handle, draws a lasso.
+         (lasso (and (null excal--multi-element)
+                     (or (and (memq excal--tool '(select lasso)) (memq 'meta mods)
+                              (or (memq 'control mods) (memq 'super mods)))
+                         (and (eq excal--tool 'lasso)
+                              (not (or (excal--handle-at start) (excal--hit start)
+                                       (excal--in-selection-box-p start)
+                                       (excal--link-at start))))))))
+    ;; Off the lasso path, the lasso tool acts as the selection tool.
+    (pcase (if (eq excal--tool 'lasso) 'select excal--tool)
+      ((guard lasso)
+       (unless shift (excal--deselect))
+       (excal--render)
+       (excal--lasso-drag start shift))
+      ('laser (excal--laser-drag start))
+      ('bucketfill
+       (excal--await-release)
+       (excal--bucket-click start (memq 'meta mods)))
       ((guard excal--multi-element)
        (excal--await-release)
        (excal--multi-click start))

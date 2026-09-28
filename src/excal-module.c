@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "excal-export.h"
+#include "excal-fill.h"
 #include "excal-frame.h"
 #include "excal-image.h"
 #include "excal-preview.h"
@@ -1298,6 +1299,78 @@ static emacs_value Fexcal_native_fb_pixel(emacs_env *env, ptrdiff_t nargs,
 	return env->make_integer(env, fb->pixels[(size_t)y * fb->width + x]);
 }
 
+/* (excal-native-fill-region WALLS X Y CELL GW GH PX PY GAP TOLERANCE) */
+static emacs_value Fexcal_native_fill_region(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	if (!type_is(env, args[0], Qvector))
+		return Qnil;
+	ptrdiff_t nwalls = env->vec_size(env, args[0]);
+	ExcalFillWall *walls = calloc((size_t)(nwalls ? nwalls : 1), sizeof *walls);
+	double **coords = calloc((size_t)(nwalls ? nwalls : 1), sizeof *coords);
+	emacs_value result = Qnil;
+	if (!walls || !coords)
+		goto done;
+	for (ptrdiff_t w = 0; w < nwalls; ++w) {
+		emacs_value wall = env->vec_get(env, args[0], w);
+		if (!type_is(env, wall, Qvector))
+			continue;
+		ptrdiff_t len = env->vec_size(env, wall);
+		if (len < 3)
+			continue;
+		size_t count = (size_t)(len - 1) / 2;
+		coords[w] = malloc(2 * count * sizeof(double));
+		if (!coords[w])
+			goto done;
+		for (size_t i = 0; i < 2 * count; ++i)
+			coords[w][i] = get_number(
+			        env, env->vec_get(env, wall, (ptrdiff_t)i + 1), 0);
+		walls[w] = (ExcalFillWall){
+		        coords[w], count,
+		        env->is_not_nil(env, env->vec_get(env, wall, 0))};
+	}
+	ExcalFillGrid grid = {get_number(env, args[1], 0),
+	                      get_number(env, args[2], 0),
+	                      get_number(env, args[3], 1),
+	                      (int)get_number(env, args[4], 0),
+	                      (int)get_number(env, args[5], 0)};
+	double *points = NULL;
+	size_t count = 0;
+	ExcalFillStatus status = excal_fill_region(
+	        walls, (size_t)nwalls, &grid, get_number(env, args[6], 0),
+	        get_number(env, args[7], 0), get_number(env, args[8], 0),
+	        get_number(env, args[9], 0.5), &points, &count);
+	switch (status) {
+	case EXCAL_FILL_OK:
+		result = env->funcall(
+		        env, env->intern(env, "make-vector"), 2,
+		        (emacs_value[]){env->make_integer(env, (intmax_t)(2 * count)),
+		                        Qnil});
+		for (size_t i = 0; i < 2 * count; ++i)
+			env->vec_set(env, result, (ptrdiff_t)i,
+			             env->make_float(env, points[i]));
+		break;
+	case EXCAL_FILL_ON_WALL:
+		result = env->intern(env, "on-wall");
+		break;
+	case EXCAL_FILL_UNBOUNDED:
+		result = env->intern(env, "unbounded");
+		break;
+	default:
+		break;
+	}
+	free(points);
+done:
+	if (coords)
+		for (ptrdiff_t w = 0; w < nwalls; ++w)
+			free(coords[w]);
+	free(coords);
+	free(walls);
+	return result;
+}
+
 static void bind(emacs_env *env, const char *name,
                  emacs_value (*fn)(emacs_env *, ptrdiff_t, emacs_value *,
                                    void *),
@@ -1411,6 +1484,14 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excal-native-fb-pixel", Fexcal_native_fb_pixel, 3,
 	     "Return FB's pixel at X, Y as an ARGB integer, or nil.\n\n"
 	     "(fn FB X Y)");
+	bind(env, "excal-native-fill-region", Fexcal_native_fill_region, 10,
+	     "Return the bucket-fill polygon around PX, PY, or why not.\n\n"
+	     "WALLS is a vector of [CLOSED X0 Y0 X1 Y1 ...] outlines in scene\n"
+	     "units.  The search grid is GW by GH cells of CELL units from X, Y;\n"
+	     "gaps narrower than GAP are bridged, and the outline is simplified\n"
+	     "to within TOLERANCE.  Return a flat vector [X0 Y0 X1 Y1 ...], the\n"
+	     "symbol `on-wall' or `unbounded', or nil on failure.\n\n"
+	     "(fn WALLS X Y CELL GW GH PX PY GAP TOLERANCE)");
 	bind(env, "excal-native-image-register", Fexcal_native_image_register,
 	     2,
 	     "Decode DATA-URL and cache the image under FILE-ID.\n\n"
