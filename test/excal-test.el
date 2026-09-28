@@ -142,25 +142,25 @@
      (setq excal--elements (list rect)
            excal--scroll-x 0.0 excal--scroll-y 0.0
            excal--tool 'select)
-     (should (eq (excal--pointer-at '(60.0 . 45.0)) 'hand))
-     (should (eq (excal--pointer-at '(300.0 . 300.0)) 'arrow))
+     (should (eq (excal--cursor-at '(60.0 . 45.0)) 'move))
+     (should (eq (excal--cursor-at '(300.0 . 300.0)) 'default))
      ;; Handles only count once the element is selected.
-     (should (eq (excal--pointer-at '(60.0 . 76.0)) 'hand))
+     (should (eq (excal--cursor-at '(60.0 . 76.0)) 'move))
      (setq excal--selection (list rect))
-     (should (eq (excal--pointer-at '(60.0 . 76.0)) 'nhdrag))
-     (should (eq (excal--pointer-at '(116.0 . 45.0)) 'hdrag))
-     (should (eq (excal--pointer-at '(116.0 . 76.0)) 'hdrag))
+     (should (eq (excal--cursor-at '(60.0 . 76.0)) 'ns-resize))
+     (should (eq (excal--cursor-at '(116.0 . 45.0)) 'ew-resize))
+     (should (eq (excal--cursor-at '(116.0 . 76.0)) 'nwse-resize))
      (setq excal--tool 'text)
-     (should (eq (excal--pointer-at '(60.0 . 45.0)) 'text))
+     (should (eq (excal--cursor-at '(60.0 . 45.0)) 'crosshair))
      (setq excal--tool 'rectangle)
-     (should (eq (excal--pointer-at '(60.0 . 45.0)) 'arrow)))))
+     (should (eq (excal--cursor-at '(60.0 . 45.0)) 'crosshair)))))
 
 (ert-deftest excal-test-set-pointer-is-silent ()
   "Changing the pointer does not mark the buffer modified."
   (excal-test--with-scene
    (insert "  ")
    (set-buffer-modified-p nil)
-   (excal--set-pointer 'hand)
+   (excal--set-pointer 'pointer)
    (should (eq (get-text-property 1 'pointer) 'hand))
    (should-not (buffer-modified-p))))
 

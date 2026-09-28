@@ -34,7 +34,7 @@ endif
 SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c \
 	src/excal-preview.c src/excal-rough.c src/excal-shape.c src/excal-freehand.c src/excal-sticky.c \
 	src/excal-image.c src/excal-frame.c src/excal-export.c
-HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h \
+HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h src/excal-cursor.h \
 	src/excal-preview.h src/excal-rough.h src/excal-shape.h src/excal-freehand.h src/excal-sticky.h \
 	src/excal-image.h src/excal-frame.h src/excal-export.h
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))
@@ -90,7 +90,7 @@ endif
 # macOS: optional CoreAnimation overlay backend, and the GUI binary lives
 # inside Emacs.app so that a frame opens.
 ifeq ($(PLATFORM),macos)
-OBJECTS += build/excal-layer.o
+OBJECTS += build/excal-layer.o build/excal-cursor.o
 CPPFLAGS += -DEXCAL_HAVE_LAYER -DEXCAL_HAVE_CORETEXT
 LDLIBS += -framework AppKit -framework QuartzCore -framework IOSurface \
 	-framework CoreText -framework CoreFoundation

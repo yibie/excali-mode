@@ -208,7 +208,9 @@ No dark-mode export yet.
 - =excal-erase.el= — eraser and element links.
 - =excal-library.el= — =.excalidrawlib= library: add, insert, import,
   export, browse.
-- =excal-edit.el= — pointer, drags, mouse commands, text, grouping, z-order.
+- =excal-edit.el= — drags, mouse commands, text, grouping, z-order.
+- =excal-cursor.el= — pointer shapes (upstream's CSS cursors; on macOS the
+  module shows them over the canvas, elsewhere the nearest Emacs =pointer=).
 - =excal-history.el= — undo/redo with shared per-element snapshots.
 - =excal-clipboard.el= — copy/cut/paste/duplicate.
 - =excal-image.el= — image render data, the files map and the module's
