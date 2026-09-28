@@ -21,6 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 bool excal_overlay_p(ExcalType type)
 {
 	return type == EXCAL_OV_RECT || type == EXCAL_OV_HANDLE ||

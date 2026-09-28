@@ -6,6 +6,16 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* strdup is POSIX, not C11: glibc hides it under -std=c11.  */
+static inline char *excal_strdup(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *copy = malloc(n);
+	return copy ? memcpy(copy, s, n) : NULL;
+}
 
 typedef enum {
 	EXCAL_RECTANGLE,

@@ -178,7 +178,7 @@ char *excal_frame_label_text(const char *title, double max_width,
 	                                    EXCAL_FONT_ASSISTANT);
 	if (full <= max_width) {
 		*width = full;
-		return strdup(title);
+		return excal_strdup(title);
 	}
 	/* CSS text-overflow: ellipsis keeps the longest prefix that fits
 	   together with "…".  */

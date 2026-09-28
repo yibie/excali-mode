@@ -20,9 +20,11 @@ MODULE_SUFFIX := $(if $(filter windows,$(PLATFORM)),.dll,$(if $(filter macos,$(P
 endif
 MODULE := excal-module$(MODULE_SUFFIX)
 
-# emacs-module.h of the Emacs being built against (it must have canvas_data).
+# emacs-module.h of the Emacs being built against (it must have canvas_data):
+# installed next to bin/, or beside src/emacs in an uninstalled build tree.
 EMACS_MODULE_INCLUDE ?= $(patsubst %/,%,$(dir $(firstword $(wildcard \
 	$(dir $(EMACS_BIN))../include/emacs-module.h \
+	$(dir $(EMACS_BIN))emacs-module.h \
 	/usr/local/include/emacs-module.h \
 	/usr/include/emacs-module.h))))
 ifeq ($(EMACS_MODULE_INCLUDE),)

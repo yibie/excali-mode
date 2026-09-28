@@ -525,7 +525,7 @@ static double truncate_slow(double x)
 	/* buf: [-]d[.ddd]e[+-]XX */
 	bool negative = buf[0] == '-';
 	const char *m = buf + negative;
-	char digits[24];
+	char digits[24] = {0};
 	int k = 0;
 	for (const char *c = m; *c && *c != 'e'; ++c)
 		if (*c >= '0' && *c <= '9' && k < 23)

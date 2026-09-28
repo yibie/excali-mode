@@ -85,7 +85,7 @@ void excal_text_set_family(int id, const char *families)
 	if (i < 0)
 		return;
 	free(family_overrides[i]);
-	family_overrides[i] = families ? strdup(families) : NULL;
+	family_overrides[i] = families ? excal_strdup(families) : NULL;
 }
 
 const char *excal_text_family(int id)
@@ -330,7 +330,7 @@ char *excal_text_resolve(const char *text, int font_family)
 	} while (pango_layout_iter_next_run(iter));
 	pango_layout_iter_free(iter);
 	g_object_unref(layout);
-	char *result = strdup(names->str);
+	char *result = excal_strdup(names->str);
 	g_string_free(names, TRUE);
 	return result;
 }

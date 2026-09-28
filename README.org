@@ -15,6 +15,41 @@ make fonts      # downloads Excalidraw's fonts into fonts/ (see fonts/README)
 make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 #+end_src
 
+** Platforms
+
+All platforms need an Emacs 32 (master) built with module support —
+its =emacs-module.h= must have =canvas_data= — plus GNU make,
+pkg-config, a C11 compiler, cairo, pangocairo and zlib.  librsvg,
+gdk-pixbuf and libwebp (SVG, GIF/JPEG and WebP images) and fontconfig
+(the fonts in =fonts/= on Linux) are used when pkg-config finds them;
+=EXCAL_WITH_RSVG=no= etc. leave one out.  Set =EMACS=/path/to/emacs= to
+build against a particular Emacs; the header is looked up next to it
+(=../include/= when installed, or =src/= in a build tree), else set
+=EMACS_MODULE_INCLUDE=.
+
+- macOS (Homebrew): =brew install pkg-config cairo pango librsvg
+  gdk-pixbuf webp=.  Adds the CoreAnimation =layer= backend and
+  registers fonts with CoreText.
+- Linux, Debian/Ubuntu: =apt install build-essential pkg-config
+  libcairo2-dev libpango1.0-dev zlib1g-dev librsvg2-dev
+  libgdk-pixbuf-2.0-dev libwebp-dev libfontconfig-dev=; Fedora: =dnf
+  install gcc make pkgconf cairo-devel pango-devel zlib-devel
+  librsvg2-devel gdk-pixbuf2-devel libwebp-devel fontconfig-devel=.
+  The BSDs build the same way with =gmake=.
+- Windows, MSYS2 UCRT64 shell: =pacman -S make
+  mingw-w64-ucrt-x86_64-{gcc,pkgconf,cairo,pango,zlib,librsvg,gdk-pixbuf2,libwebp}=,
+  with an Emacs 32 built in the same environment.  The module links
+  against the UCRT64 DLLs, so =/ucrt64/bin= must be on Emacs' =PATH=.
+  Fonts in =fonts/= are registered with GDI (=AddFontResourceEx=).
+
+Without CoreAnimation the =auto= backend is =tiles=.  What has been
+checked: the full build and =make test= on macOS; the non-macOS
+configuration (=make PLATFORM=unix=, no CoreAnimation or CoreText) built
+with GCC and passing =make test= on macOS; every source compiling
+cleanly for x86_64 glibc, aarch64 musl and x86_64 mingw-w64 (=zig cc=
+with those libcs' headers).  Not yet run on Linux or Windows: linking
+there, the GUI, and on Windows whether Pango sees GDI-registered fonts.
+
 * Try it
 
 #+begin_src emacs-lisp

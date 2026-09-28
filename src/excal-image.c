@@ -357,7 +357,7 @@ bool excal_image_register(const char *id, const char *url, size_t len,
 		return false;
 	}
 	Image *img = calloc(1, sizeof *img);
-	img->id = strdup(id);
+	img->id = excal_strdup(id);
 	img->mime = mime;
 	static const unsigned char png_sig[8] = {0x89, 'P',  'N',  'G',
 	                                         '\r', '\n', 0x1a, '\n'};
