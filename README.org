@@ -32,7 +32,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | Key | Action |
 |-----+--------|
 | =v= =1=, =h=, =r= =2=, =d= =3=, =o= =4=, =a= =5=, =l= =6=, =p= =x= =7=, =t= =8= | select, hand, rectangle, diamond, ellipse, arrow, line, pen, text |
-| =a= again | toggle sharp / round arrows |
+| =a= again | cycle sharp / round / elbow arrows |
 | =f=, =n=, =e= =0= | frame, sticky note, eraser (=e= again: previous tool) |
 | =q= | lock the tool (keep drawing) |
 | drag | create; shift = square / 15° lines, meta = from center |

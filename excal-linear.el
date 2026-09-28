@@ -22,6 +22,7 @@
 (require 'excal-transform)
 (require 'excal-binding)
 (require 'excal-create)
+(require 'excal-elbow)
 
 (defconst excal--point-hit-size 11
   "POINT_HANDLE_SIZE + 1: screen px within which a point is grabbed.")
@@ -103,24 +104,27 @@ screen px are skipped; unless ALL, only two-point elements offer one."
 (defun excal--linear-editor-overlays ()
   "Return point and midpoint overlays for the shown line or arrow."
   (when-let* ((element (excal--linear-target)))
-    (let* ((editing (eq element excal--editing-linear))
-           (diameter (/ (* 2.0 (if editing excal--point-handle-size
-                                 (/ excal--point-handle-size 2.0)))
-                        excal--zoom))
-           (mid (/ (* 2.0 5) excal--zoom))
-           (i -1))
-      (append
-       (mapcar (lambda (m)
-                 (excal--ov "ov-circle" (- (cadr m) (/ mid 2)) (- (cddr m) (/ mid 2)) mid mid
-                            :fill "#b197fcb3"))
-               (excal--segment-midpoints element editing))
-       (mapcar (lambda (p)
-                 (cl-incf i)
-                 (excal--ov "ov-circle" (- (car p) (/ diameter 2)) (- (cdr p) (/ diameter 2))
-                            diameter diameter :stroke "#5e5ad8"
-                            :fill (if (and editing (memq i excal--selected-points))
-                                      "#8683e2e6" "#ffffffe6")))
-               (excal--linear-scene-points element))))))
+    (if (excal--elbow-p element)
+        ;; Elbow arrows: end points and segment midpoints only.
+        (excal--elbow-overlays element)
+      (let* ((editing (eq element excal--editing-linear))
+             (diameter (/ (* 2.0 (if editing excal--point-handle-size
+                                   (/ excal--point-handle-size 2.0)))
+                          excal--zoom))
+             (mid (/ (* 2.0 5) excal--zoom))
+             (i -1))
+        (append
+         (mapcar (lambda (m)
+                   (excal--ov "ov-circle" (- (cadr m) (/ mid 2)) (- (cddr m) (/ mid 2)) mid mid
+                              :fill "#b197fcb3"))
+                 (excal--segment-midpoints element editing))
+         (mapcar (lambda (p)
+                   (cl-incf i)
+                   (excal--ov "ov-circle" (- (car p) (/ diameter 2)) (- (cdr p) (/ diameter 2))
+                              diameter diameter :stroke "#5e5ad8"
+                              :fill (if (and editing (memq i excal--selected-points))
+                                        "#8683e2e6" "#ffffffe6")))
+                 (excal--linear-scene-points element)))))))
 
 ;;;; Editing
 
@@ -130,6 +134,7 @@ With ANY, or interactively with a prefix argument, arrows qualify too."
   (interactive "P")
   (let ((element (excal--single-selection)))
     (when (and element
+               (not (excal--elbow-p element)) ; Elbow arrows have no point editor.
                (if any (excal--linear-p element)
                  (equal (excal--get element 'type) "line")))
       (setq excal--editing-linear element
@@ -199,7 +204,9 @@ from the neighbouring point.  Dragged arrow ends bind like drawing does."
 (defun excal--linear-mouse-down (event start)
   "Handle a press at START on the shown line or arrow's points.
 Return non-nil if the press was handled."
-  (when-let* ((element (excal--linear-target)))
+  (when-let* ((element (excal--linear-target))
+              ;; Elbow arrows have their own handles: `excal--elbow-mouse-down'.
+              ((not (excal--elbow-p element))))
     (let* ((mods (event-modifiers event))
            (editing (eq element excal--editing-linear))
            (index (excal--point-at element start))

@@ -14,6 +14,7 @@
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-text)
+(require 'excal-elbow)
 
 ;;;; Properties
 
@@ -81,7 +82,8 @@
      :types ("arrow") :choices excal--arrowhead-choices)
     (arrowType
      :app currentItemArrowType :default "round" :label "Arrow type"
-     :types ("arrow") :choices (("Sharp" . "sharp") ("Round" . "round"))))
+     :types ("arrow")
+     :choices (("Sharp" . "sharp") ("Round" . "round") ("Elbow" . "elbow"))))
   "Style properties: element key and plist of metadata.
 :app is the app-state key saved in .excalidraw files, :types the element
 types the property applies to (t for all), :choices the offered values.")
@@ -201,14 +203,24 @@ Freedraw strokes use a thinner scale (`FREEDRAW_STROKE_WIDTH')."
 (defun excal--element-style-value (property element)
   "Return PROPERTY of ELEMENT in style-panel terms."
   (pcase property
-    ((or 'roundness 'arrowType) (if (excal--get element 'roundness) "round" "sharp"))
+    ('arrowType (cond ((excal--get element 'elbowed) "elbow")
+                      ((excal--get element 'roundness) "round")
+                      (t "sharp")))
+    ('roundness (if (excal--get element 'roundness) "round" "sharp"))
     ('strokeWidth (excal--element-stroke-width-key element))
     (_ (excal--get element property))))
 
 (defun excal--set-element-style (element property value)
   "Set PROPERTY of ELEMENT to VALUE and keep it consistent."
   (pcase property
-    ((or 'roundness 'arrowType)
+    ('arrowType
+     ;; Elbow arrows are converted and routed; see `excal--elbow-convert'.
+     (excal--elbow-convert element (equal value "elbow"))
+     (excal--put element 'roundness
+                 (if (equal value "round")
+                     (list (cons 'type (excal--roundness-type (excal--get element 'type))))
+                   :null)))
+    ('roundness
      (excal--put element 'roundness
                  (if (equal value "round")
                      (list (cons 'type (excal--roundness-type (excal--get element 'type))))

@@ -121,6 +121,10 @@ selection of several elements their common box."
      ((null excal--selection) nil)
      (excal--editing-linear nil)
      ((and single (excal--two-point-linear-p single)) nil)
+     ;; Elbow arrows have no transform handles.
+     ((and single (equal (excal--get single 'type) "arrow")
+           (excal--get single 'elbowed))
+      nil)
      (single
       (list :box (excal--element-box single)
             :angle (excal--element-angle single)
@@ -228,9 +232,12 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
     (if (or excal--editing-linear (and single (excal--two-point-linear-p single)))
         ;; Only points: the editor hides the box and handles.
         nil
-      ;; Borders of elements not selected through a group.
+      ;; Borders of elements not selected through a group; a lone bound
+      ;; elbow arrow has none.
       (dolist (e excal--selection)
-        (unless (memq e grouped)
+        (unless (or (memq e grouped)
+                    (and single (excal--get e 'elbowed)
+                         (or (excal--get e 'startBinding) (excal--get e 'endBinding))))
           (push (excal--ov-box (excal--element-box e) (* 2 excal--handle-spacing)
                                :angle (excal--element-angle e)
                                :stroke (excal--selection-color))

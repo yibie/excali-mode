@@ -19,6 +19,9 @@
 (require 'excal-index)
 (require 'excal-image)
 
+(declare-function excal--elbow-p "excal-elbow")
+(declare-function excal--update-arrow "excal-binding")
+
 (defconst excal-clipboard-type "excalidraw/clipboard"
   "Value of the `type' field of Excalidraw clipboard data.")
 
@@ -134,6 +137,10 @@
   "Add ELEMENTS on top of the scene and select them."
   (setq excal--elements (append excal--elements elements))
   (excal--sync-moved-indices elements)
+  ;; Pasted elbow arrows route again against the pasted shapes.
+  (dolist (e elements)
+    (when (and (fboundp 'excal--elbow-p) (excal--elbow-p e))
+      (excal--update-arrow e)))
   (excal--deselect)
   (excal--select elements))
 
