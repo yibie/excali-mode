@@ -8,13 +8,16 @@
 ;; through a Cairo/Pango module into a Canvas image, and support basic
 ;; drawing, selection, panning and zooming.
 ;;
-;; Entry points: `excal-open', `excal-new', `excal-bench'.
+;; Entry points: `excal-open', `excal-new'.
 
 ;;; Code:
 
 (require 'excal-core)
 (require 'excal-view)
+(require 'excal-select)
 (require 'excal-edit)
+(require 'excal-history)
+(require 'excal-clipboard)
 (require 'excal-bench)
 
 (defmacro excal--tool-command (tool)
@@ -27,7 +30,9 @@
 
 (defvar-keymap excal-mode-map
   "<down-mouse-1>" #'excal-mouse-down
+  "S-<down-mouse-1>" #'excal-mouse-down
   "<double-down-mouse-1>" #'excal-double-click
+  "<down-mouse-2>" #'excal-mouse-pan
   "<mouse-movement>" #'excal-mouse-move
   "<wheel-up>" #'excal-wheel "<wheel-down>" #'excal-wheel
   "<wheel-left>" #'excal-wheel "<wheel-right>" #'excal-wheel
@@ -41,6 +46,26 @@
   "l" (excal--tool-command line)
   "p" (excal--tool-command freedraw)
   "t" (excal--tool-command text)
+  "h" (excal--tool-command hand)
+  "<escape>" #'excal-escape
+  ;; Emacs bindings first, then macOS Command-key equivalents.
+  "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo "s-z" #'excal-undo
+  "C-?" #'excal-redo "C-M-_" #'excal-redo "s-Z" #'excal-redo "s-y" #'excal-redo
+  "M-w" #'excal-copy "s-c" #'excal-copy
+  "C-w" #'excal-cut "s-x" #'excal-cut
+  "C-y" #'excal-paste "s-v" #'excal-paste
+  "C-c C-d" #'excal-duplicate "s-d" #'excal-duplicate
+  "C-x h" #'excal-select-all "s-a" #'excal-select-all
+  "C-c C-g" #'excal-group "s-g" #'excal-group
+  "C-c C-u" #'excal-ungroup "s-G" #'excal-ungroup
+  "C-c ]" #'excal-bring-forward "s-]" #'excal-bring-forward
+  "C-c [" #'excal-send-backward "s-[" #'excal-send-backward
+  "C-c }" #'excal-bring-to-front "s-}" #'excal-bring-to-front
+  "C-c {" #'excal-send-to-back "s-{" #'excal-send-to-back
+  "<left>" #'excal-nudge-left "<right>" #'excal-nudge-right
+  "<up>" #'excal-nudge-up "<down>" #'excal-nudge-down
+  "S-<left>" #'excal-nudge-left-large "S-<right>" #'excal-nudge-right-large
+  "S-<up>" #'excal-nudge-up-large "S-<down>" #'excal-nudge-down-large
   "e" #'excal-edit-text "RET" #'excal-edit-text
   "<delete>" #'excal-delete-selected "DEL" #'excal-delete-selected
   "=" #'excal-zoom-in "-" #'excal-zoom-out "0" #'excal-zoom-reset
@@ -69,7 +94,9 @@
                          excal-backend))
   (add-hook 'kill-buffer-hook #'excal--hide-layer nil t)
   (add-hook 'window-size-change-functions #'excal--window-size-change)
-  (add-hook 'window-buffer-change-functions #'excal--window-size-change))
+  (add-hook 'window-buffer-change-functions #'excal--window-size-change)
+  ;; One undo step per command that changed the scene.
+  (add-hook 'post-command-hook #'excal--commit nil t))
 
 (defun excal--open (doc file name)
   "Show DOC saved to FILE in a buffer called NAME."
@@ -81,6 +108,7 @@
     (setq excal--file file
           excal--doc doc
           excal--elements (append (alist-get 'elements doc) nil))
+    (excal--history-reset)
     (excal--sync-canvas (selected-window))
     buffer))
 

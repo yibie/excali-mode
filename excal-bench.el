@@ -56,7 +56,7 @@ STEP returns the frame's damage."
   "Measure panning and dragging over FRAMES frames with the current backend."
   (interactive)
   (let* ((frames (or frames 60))
-         (target (or excal--selected
+         (target (or (car excal--selection)
                      (cl-find-if (lambda (e) (not (excal--get e 'isDeleted)))
                                  excal--elements)))
          (step (lambda (i) (if (< i (/ frames 2)) 1 -1)))

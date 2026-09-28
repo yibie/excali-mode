@@ -139,7 +139,8 @@
           (geometry (excal--geometry rect)))
      (should (= (length (excal--handles rect)) 8))
      ;; The se handle sits 6 px outside the corner.
-     (should (eq (excal--hit-handle rect '(116.0 . 76.0)) 'se))
+     (setq excal--elements (list rect) excal--selection (list rect))
+     (should (eq (excal--hit-handle '(116.0 . 76.0)) 'se))
      (excal--resize rect 'se geometry 30 10)
      (should (equal (list (excal--get rect 'x) (excal--get rect 'y)
                           (excal--get rect 'width) (excal--get rect 'height))
@@ -198,7 +199,7 @@
      (should (eq (excal--pointer-at '(300.0 . 300.0)) 'arrow))
      ;; Handles only count once the element is selected.
      (should (eq (excal--pointer-at '(60.0 . 76.0)) 'hand))
-     (setq excal--selected rect)
+     (setq excal--selection (list rect))
      (should (eq (excal--pointer-at '(60.0 . 76.0)) 'nhdrag))
      (should (eq (excal--pointer-at '(116.0 . 45.0)) 'hdrag))
      (should (eq (excal--pointer-at '(116.0 . 76.0)) 'hdrag))
@@ -279,5 +280,187 @@
     (should (null (excal--plan-repaint 'scroll)))
     (setq excal--scroll-x (+ excal--scroll-x 2.0))
     (should (equal (excal--plan-repaint 'scroll) [[0 0 4 100]]))))
+
+;; Selection, history, clipboard, arrangement
+
+(defun excal-test--rect (x y &rest props)
+  "Return a 10x10 rectangle at X, Y with extra PROPS alist."
+  (apply #'excal--make-element "rectangle" x y
+         (cons 'width 10.0) (cons 'height 10.0) props))
+
+(defmacro excal-test--with-elements (bindings &rest body)
+  "Bind BINDINGS to elements forming the scene, then run BODY."
+  (declare (indent 1))
+  `(excal-test--with-scene
+    (let* ,bindings
+      (setq excal--elements (list ,@(mapcar #'car bindings))
+            excal--selection nil excal--editing-group nil)
+      ,@body)))
+
+(ert-deftest excal-test-group-units ()
+  "Clicking a grouped element selects its outermost group until entered."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0 (cons 'groupIds ["inner" "outer"])))
+       (b (excal-test--rect 20 0 (cons 'groupIds ["inner" "outer"])))
+       (c (excal-test--rect 40 0 (cons 'groupIds ["outer"])))
+       (d (excal-test--rect 60 0)))
+    (should (equal (excal--unit a) (list a b c)))
+    (should (equal (excal--unit d) (list d)))
+    ;; Entering the outer group exposes the inner group as the unit.
+    (setq excal--editing-group "outer")
+    (should (equal (excal--unit a) (list a b)))
+    (should (equal (excal--unit c) (list c)))
+    (setq excal--editing-group "inner")
+    (should (equal (excal--unit a) (list a)))))
+
+(ert-deftest excal-test-toggle-and-marquee ()
+  "Shift-click toggles units; the marquee takes only units fully inside."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0))
+       (b (excal-test--rect 20 0))
+       (c (excal-test--rect 40 0 (cons 'groupIds ["g"])))
+       (d (excal-test--rect 80 0 (cons 'groupIds ["g"]))))
+    (excal--toggle-unit b)
+    (excal--toggle-unit a)
+    (should (equal excal--selection (list a b)))
+    (excal--toggle-unit b)
+    (should (equal excal--selection (list a)))
+    ;; The marquee covers c but only half of its group.
+    (should (equal (excal--marquee-selection '(-1 -1 55 11)) (list a b)))
+    (should (equal (excal--marquee-selection '(-1 -1 95 11)) (list a b c d)))))
+
+(ert-deftest excal-test-selection-flags ()
+  "A lone selection gets handles; a multi-selection gets one overall box."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0)) (b (excal-test--rect 20 0)))
+    (excal--select (list a))
+    (should (= (excal--selection-flag a) 2))
+    (should (= (length (excal--overlay-natives)) 0))
+    (excal--select (list b) t)
+    (should (= (excal--selection-flag a) 1))
+    (should (equal (mapcar (lambda (v) (aref v 0)) (excal--overlay-natives))
+                   '("selection")))
+    (should (= (length (excal--selection-handles)) 8))))
+
+(ert-deftest excal-test-multi-resize ()
+  "Resizing a multi-selection scales every element within the box."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0)) (b (excal-test--rect 30 30)))
+    (excal--select (list a b))
+    (let ((geometries (mapcar (lambda (e) (cons e (excal--geometry e)))
+                              excal--selection)))
+      (excal--resize-selection 'se geometries (excal--selection-bounds) 40 40))
+    (should (equal (list (excal--get b 'x) (excal--get b 'y)
+                         (excal--get b 'width))
+                   '(60.0 60.0 20.0)))
+    (should (equal (excal--get a 'width) 20.0))))
+
+(ert-deftest excal-test-undo-redo ()
+  "Commands commit once per change; undo and redo restore scenes."
+  (excal-test--with-elements ((a (excal-test--rect 0 0)))
+    (excal--history-reset)
+    (excal--commit)
+    (should (= (length excal--undo-stack) 1))
+    (excal--select (list a))
+    (excal--nudge 5 0)
+    (excal--commit)
+    (let ((b (excal-test--rect 50 50)))
+      (setq excal--elements (append excal--elements (list b))))
+    (excal--commit)
+    (should (= (length excal--undo-stack) 3))
+    ;; The unchanged element shares one frozen copy across snapshots.
+    (should (eq (car (plist-get (nth 0 excal--undo-stack) :elements))
+                (car (plist-get (nth 1 excal--undo-stack) :elements))))
+    (excal-undo)
+    (should (= (length excal--elements) 1))
+    (should (= (excal--get (car excal--elements) 'x) 5.0))
+    (excal-undo)
+    (should (= (excal--get (car excal--elements) 'x) 0.0))
+    (excal-redo)
+    (excal-redo)
+    (should (= (length excal--elements) 2))
+    ;; Undoing then editing drops the redo branch.
+    (excal-undo)
+    (excal--select (list (car excal--elements)))
+    (excal--nudge 1 0)
+    (excal--commit)
+    (should (null excal--redo-stack))
+    ;; Restored elements are fresh copies: editing them leaves history intact.
+    (should (= (excal--get (car (plist-get (nth 1 excal--undo-stack) :elements)) 'x)
+               5.0))))
+
+(ert-deftest excal-test-clipboard-roundtrip ()
+  "Copied elements paste with new ids and remapped internal references."
+  (excal-test--with-elements
+      ((box (excal-test--rect 0 0 (cons 'groupIds ["g"])
+                              (cons 'boundElements [((id . "label") (type . "text"))])))
+       (label (excal--make-text-element 2 2 "hi"))
+       (arrow (excal--make-element
+               "arrow" 20 5 (cons 'points [[0.0 0.0] [30.0 0.0]])
+               (cons 'groupIds ["g"])
+               (cons 'startBinding (list (cons 'elementId (excal--get box 'id))
+                                         (cons 'focus 0) (cons 'gap 1)))
+               (cons 'endBinding (list (cons 'elementId "elsewhere")
+                                       (cons 'focus 0) (cons 'gap 1))))))
+    (excal--put label 'id "label")
+    (excal--put label 'containerId (excal--get box 'id))
+    (let* ((json (excal--clipboard-json (list box label arrow)))
+           (parsed (excal--parse-clipboard json))
+           (clones (excal--clone-elements parsed)))
+      (should (= (length parsed) 3))
+      (pcase-let ((`(,box2 ,label2 ,arrow2) clones))
+        (should-not (equal (excal--get box2 'id) (excal--get box 'id)))
+        (should (equal (excal--get label2 'containerId) (excal--get box2 'id)))
+        (should (equal (alist-get 'id (aref (excal--get box2 'boundElements) 0))
+                       (excal--get label2 'id)))
+        (should (equal (alist-get 'elementId (excal--get arrow2 'startBinding))
+                       (excal--get box2 'id)))
+        ;; References leaving the pasted set are dropped.
+        (should (eq (alist-get 'endBinding arrow2) :null))
+        ;; Both grouped clones share one new group.
+        (should (equal (excal--get box2 'groupIds) (excal--get arrow2 'groupIds)))
+        (should-not (equal (excal--get box2 'groupIds) ["g"]))))
+    (should-not (excal--parse-clipboard "just text"))))
+
+(ert-deftest excal-test-duplicate ()
+  "Duplicating selects offset copies on top of the scene."
+  (excal-test--with-elements ((a (excal-test--rect 0 0)))
+    (setq excal--backend nil)
+    (excal--select (list a))
+    (excal-duplicate)
+    (should (= (length excal--elements) 2))
+    (should (eq (car excal--selection) (cadr excal--elements)))
+    (should (= (excal--get (car excal--selection) 'x) 10.0))))
+
+(ert-deftest excal-test-z-order ()
+  "Z-order commands move selected runs past their neighbours."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0)) (b (excal-test--rect 0 0))
+       (c (excal-test--rect 0 0)) (d (excal-test--rect 0 0)))
+    (setq excal--backend nil)
+    (excal--select (list a b))
+    (excal-bring-forward)
+    (should (equal excal--elements (list c a b d)))
+    (excal-bring-to-front)
+    (should (equal excal--elements (list c d a b)))
+    (excal-send-backward)
+    (should (equal excal--elements (list c a b d)))
+    (excal-send-to-back)
+    (should (equal excal--elements (list a b c d)))))
+
+(ert-deftest excal-test-group-ungroup ()
+  "Grouping adds an outermost group; ungrouping removes it."
+  (excal-test--with-elements
+      ((a (excal-test--rect 0 0 (cons 'groupIds ["old"])))
+       (b (excal-test--rect 20 0)))
+    (setq excal--backend nil)
+    (excal--select (list a b))
+    (excal-group)
+    (let ((group (aref (excal--get b 'groupIds) 0)))
+      (should (equal (excal--get a 'groupIds) (vector "old" group)))
+      (should (equal (excal--unit b) (list a b)))
+      (excal-ungroup)
+      (should (equal (excal--get a 'groupIds) ["old"]))
+      (should (equal (excal--get b 'groupIds) [])))))
 
 ;;; excal-test.el ends here

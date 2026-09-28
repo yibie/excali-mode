@@ -15,6 +15,9 @@ typedef enum {
 	EXCAL_ARROW,
 	EXCAL_FREEDRAW,
 	EXCAL_TEXT,
+	/* Editor overlays, drawn only in the selection pass.  */
+	EXCAL_SELECTION, /* Box with resize handles around a multi-selection.  */
+	EXCAL_MARQUEE,   /* Box-selection rectangle.  */
 	EXCAL_UNKNOWN,
 } ExcalType;
 
@@ -36,7 +39,8 @@ typedef struct {
 	char *text_align;
 	double line_height;
 	double opacity; /* 0..100 */
-	bool selected;
+	/* 0: not selected, 1: selection box, 2: box with resize handles.  */
+	int selection;
 	bool rounded;
 } ExcalElement;
 

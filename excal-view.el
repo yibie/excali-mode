@@ -11,6 +11,8 @@
 (require 'excal-core)
 
 (declare-function excal--update-pointer "excal-edit")
+(declare-function excal--selection-flag "excal-select")
+(declare-function excal--overlay-natives "excal-select")
 
 (defun excal--flat-points (points)
   "Convert JSON POINTS array of [x y] into a flat float vector."
@@ -49,15 +51,16 @@
                       (excal--get element 'lineHeight)
                       (and (excal--get element 'roundness) t))
               excal--native-cache))))
-    (aset native 16 (eq element excal--selected))
+    (aset native 16 (excal--selection-flag element))
     native))
 
 (defun excal--visible-elements ()
-  "Return live elements as a native vector."
+  "Return live elements, then editor overlays, as a native vector."
   (vconcat (delq nil (mapcar (lambda (e)
                                (unless (excal--get e 'isDeleted)
                                  (excal--native-element e)))
-                             excal--elements))))
+                             excal--elements))
+           (excal--overlay-natives)))
 
 (defcustom excal-backend 'tiles
   "How rendered pixels reach the screen.

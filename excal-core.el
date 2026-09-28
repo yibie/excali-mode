@@ -50,7 +50,11 @@
 (defvar-local excal--scroll-x 0.0)
 (defvar-local excal--scroll-y 0.0)
 (defvar-local excal--tool 'select)
-(defvar-local excal--selected nil "Selected element alist, or nil.")
+(defvar-local excal--selection nil "Selected element alists, in z-order.")
+(defvar-local excal--editing-group nil
+  "Group id entered by double-clicking, or nil; see `excal--unit'.")
+(defvar-local excal--marquee nil
+  "Box-selection rectangle (X1 Y1 X2 Y2) in scene units while dragging.")
 (defvar-local excal--pointer nil "Pointer shape currently shown over the canvas.")
 (defvar-local excal--rendered-origin nil
   "View origin of the framebuffer's contents; see `excal--view-origin'.")
@@ -182,6 +186,18 @@
   (excal--put element 'originalText text)
   (excal--measure-text element)
   (excal--touch element))
+
+(defun excal--make-text-element (x y text)
+  "Return a new text element showing TEXT with its top-left corner at X, Y."
+  (let ((element (excal--make-element
+                  "text" x y
+                  (cons 'text text) (cons 'originalText text)
+                  (cons 'fontSize 20) (cons 'fontFamily 5)
+                  (cons 'textAlign "left") (cons 'verticalAlign "top")
+                  (cons 'containerId :null) (cons 'autoResize t)
+                  (cons 'lineHeight 1.25))))
+    (excal--measure-text element)
+    element))
 
 (provide 'excal-core)
 ;;; excal-core.el ends here

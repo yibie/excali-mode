@@ -646,7 +646,8 @@ static void element_extent(const ExcalElement *e, double *x1, double *y1,
 
 /* Dashed box plus resize handles.  Keep the handle layout in sync with
    `excal--handles'.  */
-static void draw_selection(cairo_t *cr, const ExcalElement *e, double zoom)
+static void draw_selection(cairo_t *cr, const ExcalElement *e, double zoom,
+                           bool with_handles)
 {
 	double pad = 6 / zoom;
 	double x1, y1, x2, y2;
@@ -668,7 +669,7 @@ static void draw_selection(cairo_t *cr, const ExcalElement *e, double zoom)
 	cairo_stroke(cr);
 	cairo_set_dash(cr, NULL, 0, 0);
 	/* Resizing rotated elements is not supported yet.  */
-	if (e->angle == 0) {
+	if (with_handles && e->angle == 0) {
 		double hs = 8 / zoom;
 		double hx[] = {x, x + w, x, x + w, x + w / 2, x + w / 2, x, x + w};
 		double hy[] = {y, y, y + h, y + h, y, y + h, y + h / 2, y + h / 2};
@@ -683,6 +684,20 @@ static void draw_selection(cairo_t *cr, const ExcalElement *e, double zoom)
 			cairo_stroke(cr);
 		}
 	}
+	cairo_restore(cr);
+}
+
+static void draw_marquee(cairo_t *cr, const ExcalElement *e, double zoom)
+{
+	double x1, y1, x2, y2;
+	element_extent(e, &x1, &y1, &x2, &y2);
+	cairo_save(cr);
+	cairo_rectangle(cr, x1, y1, x2 - x1, y2 - y1);
+	cairo_set_source_rgba(cr, 0.41, 0.40, 0.87, 0.08);
+	cairo_fill_preserve(cr);
+	cairo_set_source_rgb(cr, 0.41, 0.40, 0.87);
+	cairo_set_line_width(cr, 1 / zoom);
+	cairo_stroke(cr);
 	cairo_restore(cr);
 }
 
@@ -754,8 +769,15 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 		}
 	}
 	for (size_t i = 0; i < count; ++i)
-		if (visible[i] && elements[i].selected)
-			draw_selection(cr, &elements[i], view->zoom);
+		if (!visible[i])
+			continue;
+		else if (elements[i].type == EXCAL_MARQUEE)
+			draw_marquee(cr, &elements[i], view->zoom);
+		else if (elements[i].type == EXCAL_SELECTION)
+			draw_selection(cr, &elements[i], view->zoom, true);
+		else if (elements[i].selection > 0)
+			draw_selection(cr, &elements[i], view->zoom,
+			               elements[i].selection == 2);
 	free(visible);
 
 	cairo_destroy(cr);
