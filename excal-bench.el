@@ -29,15 +29,18 @@
                    (cons 'fillStyle (if (cl-evenp i) "hachure" "solid"))))))))
 
 (defun excal--bench-frame (damage)
-  "Render one benchmark frame with DAMAGE and push it to the screen."
-  (excal--render damage)
+  "Render one benchmark frame with DAMAGE and push it to the screen.
+DAMAGE `preview' shows the frame as a zoom preview instead."
+  (if (eq damage 'preview)
+      (excal--render-preview)
+    (excal--render damage))
   (redisplay t)
   (when (eq excal--backend 'layer)
     (excal-native-layer-flush)))
 
 (defun excal--bench-run (frames step)
   "Time FRAMES frames produced by calling STEP with the frame index.
-STEP returns the frame's damage."
+STEP returns the frame's damage; see `excal--bench-frame'."
   (let ((render 0.0) (present 0.0) (refreshed 0)
         (start (float-time)))
     (dotimes (i frames)
@@ -52,8 +55,27 @@ STEP returns the frame's damage."
             :fps (/ frames total)
             :surfaces (/ (float refreshed) frames)))))
 
+(defun excal--bench-zoom (frames preview)
+  "Time FRAMES zoom steps about the view centre.
+Zoom in by 3% per step for the first half and back out for the second,
+as zoom previews when PREVIEW is non-nil and as full renders otherwise.
+Afterwards restore the view and render it fully."
+  (let ((zoom excal--zoom) (x excal--scroll-x) (y excal--scroll-y)
+        (center (cons (/ (car excal--canvas-size) excal--pixel-scale 2)
+                      (/ (cdr excal--canvas-size) excal--pixel-scale 2))))
+    (unwind-protect
+        (excal--bench-run
+         frames
+         (lambda (i)
+           (excal--zoom-view (if (< i (/ frames 2)) 1.03 (/ 1 1.03)) center)
+           (if preview 'preview 'full)))
+      (setq excal--zoom zoom excal--scroll-x x excal--scroll-y y)
+      (excal--render))))
+
 (defun excal-bench (&optional frames)
-  "Measure panning and dragging over FRAMES frames with the current backend."
+  "Measure panning, dragging and zooming over FRAMES frames.
+Use the current backend.  `zoom' steps are zoom previews, `zoom-full'
+renders every step fully for comparison."
   (interactive)
   (let* ((frames (or frames 60))
          (target (or (car excal--selection)
@@ -80,11 +102,14 @@ STEP returns the frame's damage."
                          (excal--put target 'x (+ (excal--get target 'x)
                                                   (if (< i (/ frames 2)) 3.0 -3.0)))
                          (excal--touch target))))))
+         (zoom (excal--bench-zoom frames t))
+         (zoom-full (excal--bench-zoom frames nil))
          (result (list :backend excal--backend
                        :elements (length excal--elements)
                        :canvas excal--canvas-size
                        :pixel-scale excal--pixel-scale
-                       :pan-full pan-full :pan pan :drag drag)))
+                       :pan-full pan-full :pan pan :drag drag
+                       :zoom zoom :zoom-full zoom-full)))
     (message "excal-bench: %S" result)
     result))
 
@@ -119,13 +144,13 @@ from a script would split the window and change the measured canvas."
         (erase-buffer)
         (insert (format "canvas %S, pixel scale %.1f, %d frames\n\n"
                         size scale frames))
-        (insert (format "%-7s %-7s %-8s %9s %10s %9s %6s %9s\n"
+        (insert (format "%-7s %-7s %-9s %9s %10s %9s %6s %9s\n"
                         "scene" "backend" "op" "render" "present" "frame" "fps"
                         "surfaces"))
         (dolist (r results)
-          (dolist (op '(:pan-full :pan :drag))
+          (dolist (op '(:pan-full :pan :drag :zoom :zoom-full))
             (when-let* ((m (plist-get (cdr r) op)))
-              (insert (format "%-7s %-7s %-8s %7.2fms %8.2fms %7.2fms %6.1f %9.1f\n"
+              (insert (format "%-7s %-7s %-9s %7.2fms %8.2fms %7.2fms %6.1f %9.1f\n"
                               (car r) (plist-get (cdr r) :backend)
                               (substring (symbol-name op) 1)
                               (plist-get m :render-ms) (plist-get m :present-ms)

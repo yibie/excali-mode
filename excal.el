@@ -88,10 +88,7 @@
                                                 (round (* 100 excal--zoom)))))
   (setq excal--native-cache (make-hash-table :test #'eq :weakness 'key)
         excal--pixel-scale (excal--guess-pixel-scale)
-        excal--backend (if (and (eq excal-backend 'layer)
-                                (not (fboundp 'excal-native-layer-create)))
-                           'tiles
-                         excal-backend))
+        excal--backend (excal--resolve-backend))
   (add-hook 'kill-buffer-hook #'excal--hide-layer nil t)
   (add-hook 'window-size-change-functions #'excal--window-size-change)
   (add-hook 'window-buffer-change-functions #'excal--window-size-change)
