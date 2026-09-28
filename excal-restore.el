@@ -1,5 +1,8 @@
 ;;; excal-restore.el --- Restore and migrate loaded scenes  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Port of packages/excalidraw/data/restore.ts: fills in missing element

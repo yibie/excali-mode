@@ -1,5 +1,8 @@
 ;;; excal-bench.el --- Benchmarks for excal  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Frame-time measurements for the presentation backends.

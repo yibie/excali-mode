@@ -1,5 +1,8 @@
 ;;; excal-binding.el --- Binding arrows to shapes  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Arrow binding following Excalidraw's simple binding path (the default;

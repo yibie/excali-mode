@@ -1,5 +1,8 @@
 ;;; excal-core.el --- Native module, shared state and document model  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Loads the rendering module and defines the per-buffer state and the

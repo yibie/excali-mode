@@ -1,5 +1,8 @@
 ;;; excal-frame-render.el --- Frame titles, name labels and render data  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Rendering-side helpers for frames (`frame' and `magicframe'):

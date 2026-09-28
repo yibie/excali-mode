@@ -1,5 +1,8 @@
 ;;; excal-fetch-fonts.el --- Download Excalidraw's fonts into fonts/  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Run by `make fonts':

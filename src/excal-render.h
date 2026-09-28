@@ -1,4 +1,6 @@
 /* excal-render.h --- Excalidraw scene rasterizer for Emacs Canvas  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_RENDER_H
 #define EXCAL_RENDER_H

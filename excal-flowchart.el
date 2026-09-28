@@ -1,5 +1,8 @@
 ;;; excal-flowchart.el --- Flowchart creation and navigation  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Port of upstream element/src/flowchart.ts and its App.tsx wiring

@@ -1,5 +1,8 @@
 ;;; excal-view.el --- Rendering, presentation backends and view navigation  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Turns the scene into pixels and puts them on screen: the offscreen

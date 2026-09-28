@@ -1,4 +1,6 @@
 /* excal-frame.c --- Frame outlines, names and clipping  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Ports the frame parts of upstream renderElement.ts (the "frame" and
  * "magicframe" case), staticScene.ts (`frameClip') and App.tsx

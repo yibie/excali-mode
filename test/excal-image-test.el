@@ -1,5 +1,8 @@
 ;;; excal-image-test.el --- Tests for images and frame rendering  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 (require 'ert)
 (require 'excal)
 

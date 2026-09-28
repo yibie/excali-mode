@@ -1,5 +1,8 @@
 ;;; excal-hit.el --- Hit testing  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Point-on-element tests following Excalidraw's collision.ts

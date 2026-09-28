@@ -1,8 +1,56 @@
-#+title: excal.el — Excalidraw on Emacs Canvas (spike)
+#+title: excal-mode — Excalidraw inside Emacs
 
-Path-exploration spike: .excalidraw files are parsed in Elisp, rasterized by a
-Cairo/Pango dynamic module straight into an Emacs 32 Canvas pixel buffer, and
-edited with mouse/keyboard commands.
+#+html: <p align="center"><img src="docs/media/hero.gif" alt="Drawing, binding arrows and growing a flowchart in excal-mode" width="800"></p>
+
+excal-mode opens, edits and saves [[https://excalidraw.com][Excalidraw]] drawings in Emacs.  The
+=.excalidraw= files are the same ones the web app reads and writes, and
+the drawing looks the same: rough.js strokes and hachure fills, the
+hand-drawn fonts, and arrows that stay attached to shapes.  Elisp holds
+the scene and every editing command; a small C module draws it with
+Cairo and Pango straight into the pixel buffer of Emacs 32's new
+=canvas= image type.
+
+It is an unofficial port, not affiliated with the Excalidraw project,
+and it needs Emacs 32 (master) — the first Emacs with the canvas API.
+
+* Features
+
+- Every Excalidraw tool: rectangle, diamond, ellipse, arrow, line, pen,
+  text, image, frame, sticky note, eraser, laser pointer, eye dropper,
+  bucket fill, autoshape and lasso selection.
+- Arrows that bind to shapes and follow them, including elbow arrows
+  routed around obstacles; =Cmd+arrow= grows a flowchart node by node.
+- Selection, groups, resize and rotate handles, align and distribute,
+  flip, lock, snapping and grid, z-order, copy and paste of elements and
+  styles, undo and redo.
+- Labels in shapes and on arrows, text wrapping and fonts as upstream
+  lays them out (CJK included), dark mode.
+- Images (PNG, SVG, JPEG, GIF, WebP), frames with clipping, the element
+  library (=.excalidrawlib=), and PNG/SVG export with the scene embedded
+  so Excalidraw can open the export again.
+- Smooth on large scenes: only damaged areas repaint, panning reuses
+  pixels, zooming shows an instant preview, and on macOS a CoreAnimation
+  layer bypasses Emacs's image refresh.
+
+* Installation
+
+excal-mode is not on MELPA yet.  Build it from a clone:
+
+#+begin_src shell
+git clone https://github.com/yibie/excal-mode.git
+cd excal-mode
+make            # the C module; see Platforms below for the libraries
+make fonts      # optional but recommended: Excalidraw's fonts (network)
+#+end_src
+
+#+begin_src emacs-lisp
+(use-package excal
+  :load-path "/path/to/excal-mode"
+  :commands (excal-open excal-new))
+#+end_src
+
+=M-x excal-open= opens a =.excalidraw= file (or a PNG/SVG exported with
+an embedded scene); =M-x excal-new= starts an empty drawing.
 
 * Build and test
 
@@ -50,13 +98,7 @@ cleanly for x86_64 glibc, aarch64 musl and x86_64 mingw-w64 (=zig cc=
 with those libcs' headers).  Not yet run on Linux or Windows: linking
 there, the GUI, and on Windows whether Pango sees GDI-registered fonts.
 
-* Try it
-
-#+begin_src emacs-lisp
-(add-to-list 'load-path "/path/to/excalidraw")
-(require 'excal)
-(excal-open "test/sample.excalidraw")   ; or (excal-new)
-#+end_src
+* Keys
 
 =excal-open= also opens PNG and SVG files exported with an embedded scene
 (by excal or Excalidraw); such scenes are saved to a new =.excalidraw= file.
@@ -241,3 +283,10 @@ web renderer pixel for pixel.  Without =make fonts=, text uses system
 fallback fonts, so widths and wrapping differ from the web app.  Native
 pointer shapes need macOS; elsewhere the nearest Emacs =pointer= shape
 stands in.  Linux and Windows builds are cross-compiled but not run.
+
+* License
+
+GPL-3.0-or-later; see =LICENSE=.  excal-mode ports code from Excalidraw,
+roughjs and perfect-freehand (MIT) and fractional-indexing (CC0); their
+notices are in =THIRD-PARTY-NOTICES=.  The fonts =make fonts= downloads
+keep their own licenses, listed in =fonts/README=.

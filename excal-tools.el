@@ -1,5 +1,8 @@
 ;;; excal-tools.el --- Laser, eye dropper, autoshape and lasso  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The smaller tools of docs/excalidraw-spec.md §3.A.3-4:

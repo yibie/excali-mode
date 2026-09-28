@@ -1,4 +1,6 @@
 /* excal-export.c --- PNG and SVG export, embedded scenes  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Port of upstream scene/export.ts `exportToCanvas' (PNG) on top of the
  * regular renderer, with data/image.ts `encodePngMetadata' for the

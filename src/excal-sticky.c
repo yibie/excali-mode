@@ -1,4 +1,6 @@
 /* excal-sticky.c --- Sticky note rendering  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Port of Excalidraw's stickyNote.ts drawing (docs/excalidraw-spec.md
  * §2a.11): plain canvas paths, no roughjs.  A shadow offset by 3 px, the

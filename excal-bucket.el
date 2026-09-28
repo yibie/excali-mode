@@ -1,5 +1,8 @@
 ;;; excal-bucket.el --- Bucket fill  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The bucket-fill tool (`b'; docs/excalidraw-spec.md, bucketFill.ts).

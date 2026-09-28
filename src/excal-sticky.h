@@ -1,4 +1,6 @@
 /* excal-sticky.h --- Sticky note rendering  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_STICKY_H
 #define EXCAL_STICKY_H

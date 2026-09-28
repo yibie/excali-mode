@@ -1,4 +1,6 @@
 /* excal-text.h --- Text layout, measurement and drawing  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_TEXT_H
 #define EXCAL_TEXT_H

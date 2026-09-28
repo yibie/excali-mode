@@ -1,4 +1,6 @@
 /* excal-frame.h --- Frame outlines, names and clipping  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_FRAME_H
 #define EXCAL_FRAME_H

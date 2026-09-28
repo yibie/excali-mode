@@ -1,5 +1,8 @@
 ;;; excal-linear.el --- Point editor for lines and arrows  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Editing the points of lines and arrows, following Excalidraw's

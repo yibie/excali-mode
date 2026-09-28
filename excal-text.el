@@ -1,5 +1,8 @@
 ;;; excal-text.el --- Text layout: fonts, measurement, wrapping, bound text  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Excalidraw's text layout, ported from packages/common/src/font-metadata.ts

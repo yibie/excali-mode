@@ -104,7 +104,7 @@ endif
 # A no-op where the glob matches nothing.
 EMACS_Q_FIX = --eval "(let ((lib (car (file-expand-wildcards \"/opt/homebrew/opt/gcc/lib/gcc/current/gcc/*/*/libemutls_w.a\")))) (when lib (setq native-comp-driver-options (list (concat \"-L\" (file-name-directory lib))))))"
 
-.PHONY: all module test bench try info clean fonts
+.PHONY: all module test bench try info clean fonts hero
 
 all: module
 
@@ -144,6 +144,17 @@ bench: module
 	rm -f bench.txt
 	$(EMACS_GUI) -Q $(EMACS_Q_FIX) -L $(CURDIR) -l $(CURDIR)/test/excal-gui-bench.el
 	@cat bench.txt
+
+# The README animation, rendered in batch by excal itself (needs ffmpeg).
+hero: module
+	rm -rf build/hero && mkdir -p build/hero
+	EXCAL_HERO_FRAMES=$(CURDIR)/build/hero $(EMACS) -Q --batch -L $(CURDIR) \
+	  -l $(CURDIR)/docs/media/hero.el -f hero-render
+	ffmpeg -loglevel error -y -framerate 30 -i build/hero/f%05d.png \
+	  -vf "fps=15,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
+	  docs/media/hero.gif
+	ffmpeg -loglevel error -y -framerate 30 -i build/hero/f%05d.png \
+	  -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart build/hero.mp4
 
 # Download Excalidraw's fonts into fonts/ (needs curl and network access;
 # woff2_decompress and pyftmerge are used when installed).  See fonts/README.

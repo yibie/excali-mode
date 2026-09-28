@@ -1,4 +1,6 @@
 /* excal-fill.c --- Bucket-fill regions  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Upstream's bucketFill.ts finds the smallest closed region under the
  * click from nearby element outlines, bridging gaps up to

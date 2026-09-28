@@ -1,4 +1,6 @@
 /* excal-freehand.h --- Freedraw stroke outlines  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Ports of perfect-freehand 1.2.0 `getStroke' (variable width) and of
  * the `LaserPointer' outline from @excalidraw/laser-pointer (constant

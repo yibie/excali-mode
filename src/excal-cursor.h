@@ -1,4 +1,6 @@
 /* excal-cursor.h --- Excalidraw's pointer shapes over the canvas (macOS)  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_CURSOR_H
 #define EXCAL_CURSOR_H

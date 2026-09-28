@@ -1,5 +1,8 @@
 ;;; excal-clipboard.el --- Copy, cut, paste and duplicate  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The clipboard carries Excalidraw's own format, a JSON object of type

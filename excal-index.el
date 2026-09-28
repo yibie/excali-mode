@@ -1,5 +1,8 @@
 ;;; excal-index.el --- Fractional z-order indices  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Every Excalidraw element carries an `index', a base-62 "order key"

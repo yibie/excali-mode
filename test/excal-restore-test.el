@@ -1,5 +1,8 @@
 ;;; excal-restore-test.el --- Tests for restore, save and fractional indices  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 (require 'ert)
 (require 'excal)
 

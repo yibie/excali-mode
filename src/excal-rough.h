@@ -1,4 +1,6 @@
 /* excal-rough.h --- Port of roughjs 4.6.4 shape generation  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * A faithful port of the parts of roughjs (renderer.ts, generator.ts,
  * fillers/, and its helpers hachure-fill 0.5.2, points-on-curve 0.2.0,

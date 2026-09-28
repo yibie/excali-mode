@@ -1,4 +1,6 @@
 /* excal-overlay.h --- Editor overlays: selection UI  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_OVERLAY_H
 #define EXCAL_OVERLAY_H

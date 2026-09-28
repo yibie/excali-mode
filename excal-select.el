@@ -1,5 +1,8 @@
 ;;; excal-select.el --- Selection model  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The selection is a list of element alists.  Elements are selected in

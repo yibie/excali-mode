@@ -1,5 +1,8 @@
 ;;; excal-flowchart-test.el --- Flowchart creation and navigation  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Expected positions follow upstream's placeCluster: nodes copy the
 ;; parent's size, sit one 100px gap away along the direction, and the
 ;; cluster is centered on the parent across it, sliding off connected

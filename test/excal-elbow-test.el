@@ -1,5 +1,8 @@
 ;;; excal-elbow-test.el --- Elbow arrows  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Expected points marked "traced" were derived by hand, stepping through
 ;; upstream's elbowArrow.ts (getElbowArrowData, generateDynamicAABBs,
 ;; calculateGrid, astar with its binary heap, post-processing).

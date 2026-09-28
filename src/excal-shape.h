@@ -1,4 +1,6 @@
 /* excal-shape.h --- Excalidraw element shapes on top of roughjs  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Port of packages/element/src/shape.ts (`generateRoughOptions',
  * `_generateElementShape', arrowheads, freedraw outline) and the bits of

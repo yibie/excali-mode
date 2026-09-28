@@ -1,5 +1,8 @@
 ;;; excal-history.el --- Undo and redo  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; History is a stack of scene snapshots taken after each command that

@@ -1,4 +1,6 @@
 /* excal-render.c --- Excalidraw scene rasterizer for Emacs Canvas  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Shapes come from excal-shape.c, a port of Excalidraw's shape.ts on
  * top of a roughjs port (excal-rough.c); this file turns their ops into

@@ -1,5 +1,8 @@
 ;;; excal-style.el --- Style properties and the style panel  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Each buffer has a current style, Excalidraw's `currentItem*' app

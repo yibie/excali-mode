@@ -1,5 +1,8 @@
 ;;; excal-snap.el --- Grid and object snapping  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Grid mode and object snapping (docs/excalidraw-spec.md §2c.3, §2c.11,

@@ -1,5 +1,8 @@
 ;;; excal-edit.el --- Tools, transforms and editing commands  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Hit testing, resize handles, pointer shapes, the drawing tools, moving

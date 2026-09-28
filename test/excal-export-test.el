@@ -1,5 +1,8 @@
 ;;; excal-export-test.el --- Tests for PNG/SVG export and import  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 (require 'ert)
 (require 'excal)
 

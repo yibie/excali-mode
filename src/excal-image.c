@@ -1,4 +1,6 @@
 /* excal-image.c --- Image elements: decoding, cache and drawing  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Images live in a session-wide cache keyed by file id, filled once per
  * file from its data URL (`excal-native-image-register') and emptied by

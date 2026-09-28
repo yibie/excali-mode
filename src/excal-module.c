@@ -1,4 +1,6 @@
 /* excal-module.c --- Emacs module glue for excal.el  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include <emacs-module.h>
 #include <math.h>

@@ -1,5 +1,8 @@
 ;;; excal-text-test.el --- Tests for text layout  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Wrapping cases are upstream's packages/element/tests/textWrapping.test.ts,
 ;; which mocks every UTF-16 code unit as 10px wide; `excal-text-test--mock'
 ;; does the same.

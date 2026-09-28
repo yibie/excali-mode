@@ -1,5 +1,8 @@
 ;;; excal-cursor.el --- Pointer shapes  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Which pointer shape the canvas shows, following upstream's cursor.ts

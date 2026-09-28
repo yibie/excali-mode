@@ -1,5 +1,8 @@
 ;;; excal-frame.el --- Frame behavior  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Frames following Excalidraw's frame.ts (docs/excalidraw-spec.md §3b.9):

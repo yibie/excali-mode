@@ -1,4 +1,6 @@
 /* excal-preview.h --- Approximate zoom previews from rendered pixels  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_PREVIEW_H
 #define EXCAL_PREVIEW_H

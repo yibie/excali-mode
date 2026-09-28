@@ -1,4 +1,6 @@
 /* excal-layer.m --- CoreAnimation overlay for excal.el (macOS)  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Emacs' NS canvas refresh copies pixels one Objective-C message at a
  * time.  This overlay bypasses it: a CALayer is added above the Emacs

@@ -1,4 +1,6 @@
 /* excal-export.h --- PNG and SVG export, embedded scenes  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_EXPORT_H
 #define EXCAL_EXPORT_H

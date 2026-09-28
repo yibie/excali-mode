@@ -1,4 +1,6 @@
 /* excal-fill.h --- Bucket-fill regions  -*- c-file-style: "linux" -*- */
+/* Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #ifndef EXCAL_FILL_H
 #define EXCAL_FILL_H

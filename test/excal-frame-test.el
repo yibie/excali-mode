@@ -1,5 +1,8 @@
 ;;; excal-frame-test.el --- Frame behavior  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 (require 'ert)
 (require 'excal)
 (require 'excal-test)

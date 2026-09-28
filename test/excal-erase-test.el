@@ -1,5 +1,8 @@
 ;;; excal-erase-test.el --- Eraser and links  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 (require 'ert)
 (require 'excal)
 (require 'excal-test)

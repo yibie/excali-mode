@@ -1,5 +1,8 @@
 ;;; excal-cursor-test.el --- Pointer shapes  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Expected cursors follow upstream's cursor.ts and the hover rules of
 ;; App.tsx handleCanvasPointerMove.
 

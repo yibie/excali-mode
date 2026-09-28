@@ -1,5 +1,8 @@
 ;;; excal-export.el --- PNG and SVG export with embedded scenes, and import  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; `excal-export-png' and `excal-export-svg' follow upstream

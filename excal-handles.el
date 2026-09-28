@@ -1,5 +1,8 @@
 ;;; excal-handles.el --- Selection UI and transform handles  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Geometry of the selection UI, following Excalidraw's

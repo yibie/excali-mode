@@ -1,5 +1,8 @@
 ;;; excal-erase.el --- Eraser and element links  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; The eraser and element links (docs/excalidraw-spec.md §3b.10).

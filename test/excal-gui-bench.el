@@ -1,5 +1,8 @@
 ;;; excal-gui-bench.el --- Benchmark backends in a GUI frame  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Run with `make bench'.  Writes the results table to bench.txt.
 
 (setq inhibit-startup-screen t)

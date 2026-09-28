@@ -1,5 +1,8 @@
 ;;; excal-actions.el --- Editor actions: flip, align, distribute, lock, zoom to fit  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026 yibie
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Commentary:
 
 ;; Commands matching Excalidraw's actions (docs/excalidraw-spec.md §3.A.3,

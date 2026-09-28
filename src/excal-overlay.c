@@ -1,4 +1,6 @@
 /* excal-overlay.c --- Editor overlays: selection UI  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Elisp computes the selection UI geometry (see excal-select.el) and
  * passes it as overlay pseudo-elements:

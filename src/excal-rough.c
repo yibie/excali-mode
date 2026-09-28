@@ -1,4 +1,6 @@
 /* excal-rough.c --- Port of roughjs 4.6.4 shape generation  -*- c-file-style: "linux" -*-
+ * Copyright (C) 2026 yibie
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Function names follow the roughjs sources they port.  JS evaluates
  * operands left to right while C does not, so every random draw is its
