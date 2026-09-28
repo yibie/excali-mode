@@ -71,7 +71,7 @@ The result is a vector [KEY VALUE ...] with string keys, read in C by
 `get_extra_*' in excal-module.c.  Keys: \"roundnessType\",
 \"roundnessValue\", \"elbowed\", and for freedraw \"pressures\",
 \"simulatePressure\" (1, 0, or absent), \"strokeVariability\" and
-\"streamline\"."
+\"streamline\", and for sticky notes \"stickyFooter\"."
   (let ((roundness (excal--get element 'roundness))
         (extras nil))
     (when (consp roundness)
@@ -94,7 +94,24 @@ The result is a vector [KEY VALUE ...] with string keys, read in C by
           (push "strokeVariability" extras) (push variability extras))
         (when-let* ((streamline (excal--get options 'streamline)))
           (push "streamline" extras) (push streamline extras))))
+    (when (equal (excal--get element 'type) "stickynote")
+      (when-let* ((footer (excal--sticky-footer element)))
+        (push "stickyFooter" extras) (push footer extras)))
     (vconcat (nreverse extras))))
+
+(defun excal--sticky-footer (note)
+  "Return NOTE's date label: \"27 Sep\", with the year when it is not this
+year and the body is wide enough (upstream sticky note footer)."
+  (let ((created (or (excal--get note 'created) (excal--get note 'updated))))
+    (when (numberp created)
+      (let* ((time (decode-time (/ created 1000.0)))
+             (months ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
+             (label (format "%d %s" (decoded-time-day time)
+                            (aref months (1- (decoded-time-month time))))))
+        (if (and (/= (decoded-time-year time) (decoded-time-year (decode-time)))
+                 (>= (- (or (excal--get note 'width) 0) 32) 80))
+            (format "%s %d" label (decoded-time-year time))
+          label)))))
 
 (defun excal--native-text-extras (element)
   "Return extra text rendering properties of ELEMENT for the module.

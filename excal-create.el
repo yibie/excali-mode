@@ -290,6 +290,58 @@ points is discarded."
     (excal--touch element)
     (excal--created element)))
 
+;;;; Sticky notes
+
+(defconst excal--sticky-note-size 250 "DEFAULT_STICKY_NOTE_SIZE.")
+(defconst excal--sticky-note-min-size 75 "STICKY_NOTE_MIN_SIZE.")
+
+(defun excal--create-sticky-note (start)
+  "Create a sticky note from scene point START and edit its text.
+A click places a default-sized note centered on START; a drag sizes it,
+no smaller than `excal--sticky-note-min-size'."
+  (let* ((now (truncate (* 1000 (float-time))))
+         (note (excal--make-element
+                "stickynote" (car start) (cdr start)
+                (cons 'strokeColor "#1e1e1e") (cons 'backgroundColor "#ffdf6b")
+                (cons 'fillStyle "solid") (cons 'strokeWidth 1)
+                (cons 'roughness (or (excal--style-value 'roughness) 1))
+                (cons 'roundness '((type . 2))) (cons 'created now)
+                (cons 'baseHeight excal--sticky-note-size)))
+         (dragged nil))
+    (excal--add-new note)
+    (excal--deselect)
+    (excal--drag-loop
+     (lambda (ev)
+       (let ((p (excal--grid-point (excal--event-scene-xy ev))))
+         (when (> (max (abs (- (car p) (car start))) (abs (- (cdr p) (cdr start))))
+                  excal--dragging-threshold)
+           (setq dragged t))
+         (when dragged
+           (excal--with-damage note
+             (pcase-let ((`(,x ,y ,w ,h) (excal--drag-box (car start) (cdr start)
+                                                          (car p) (cdr p) nil nil)))
+               (excal--put note 'x (float x)) (excal--put note 'y (float y))
+               (excal--put note 'width (float w)) (excal--put note 'height (float h))
+               (excal--touch note)))))))
+    (if dragged
+        (let ((size-w (max excal--sticky-note-min-size (excal--get note 'width)))
+              (size-h (max excal--sticky-note-min-size (excal--get note 'height))))
+          (excal--put note 'width (float size-w))
+          (excal--put note 'height (float size-h)))
+      (let ((s excal--sticky-note-size))
+        (excal--put note 'x (float (- (car start) (/ s 2))))
+        (excal--put note 'y (float (- (cdr start) (/ s 2))))
+        (excal--put note 'width (float s))
+        (excal--put note 'height (float s))))
+    (excal--put note 'baseHeight (excal--get note 'height))
+    (excal--touch note)
+    (excal--deselect)
+    (excal--select (list note))
+    (unless excal--tool-locked (setq excal--tool 'select))
+    (excal--render)
+    (when (fboundp 'excal-edit-text)
+      (excal-edit-text))))
+
 ;;;; Dispatch
 
 (defun excal--create (tool event start)
@@ -305,6 +357,7 @@ With the grid on the start snaps to it, unless super is held."
        (excal--create-linear (symbol-name tool) start (memq 'shift mods)
                              (memq 'meta mods)))
       ('freedraw (excal--create-freedraw start))
+      ('stickynote (excal--create-sticky-note start))
       ('text
        (excal--await-release)
        (excal--insert-text (car start) (cdr start))

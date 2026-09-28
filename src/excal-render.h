@@ -15,6 +15,7 @@ typedef enum {
 	EXCAL_ARROW,
 	EXCAL_FREEDRAW,
 	EXCAL_TEXT,
+	EXCAL_STICKYNOTE,
 	/* Editor overlays (selection UI), drawn above all elements; see
 	   excal-overlay.c.  */
 	EXCAL_OV_RECT,   /* Rotated rectangle outline, optionally filled.  */
@@ -43,6 +44,7 @@ typedef struct {
 	double font_size;
 	int font_family;
 	char *text_align;
+	char *sticky_footer;   /* Sticky note date label, or NULL.  */
 	char *start_arrowhead; /* NULL for none.  */
 	char *end_arrowhead;
 	double line_height;

@@ -98,7 +98,7 @@ or deselect."
   "t" (excal--tool-command text) "8" (excal--tool-command text)
   "e" (excal--tool-command eraser) "0" (excal--tool-command eraser)
   "f" (excal--tool-command frame)
-  "n" #'excal-not-yet                       ; sticky note
+  "n" (excal--tool-command stickynote)
   "9" #'excal-not-yet                       ; image
   "k" #'excal-not-yet "b" #'excal-not-yet "i" #'excal-not-yet
   "q" #'excal-toggle-tool-lock

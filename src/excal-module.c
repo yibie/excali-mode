@@ -10,6 +10,7 @@
 #include "excal-text.h"
 #include "excal-rough.h"
 #include "excal-shape.h"
+#include "excal-sticky.h"
 #ifdef EXCAL_HAVE_LAYER
 #include "excal-layer.h"
 #endif
@@ -134,7 +135,8 @@ static ExcalType parse_type(const char *name)
 	        {"rectangle", EXCAL_RECTANGLE}, {"ellipse", EXCAL_ELLIPSE},
 	        {"diamond", EXCAL_DIAMOND},     {"line", EXCAL_LINE},
 	        {"arrow", EXCAL_ARROW},         {"freedraw", EXCAL_FREEDRAW},
-	        {"text", EXCAL_TEXT},           {"ov-rect", EXCAL_OV_RECT},
+	        {"text", EXCAL_TEXT},           {"stickynote", EXCAL_STICKYNOTE},
+	        {"ov-rect", EXCAL_OV_RECT},
 	        {"ov-handle", EXCAL_OV_HANDLE}, {"ov-circle", EXCAL_OV_CIRCLE},
 	        {"ov-ellipse", EXCAL_OV_ELLIPSE}, {"ov-diamond", EXCAL_OV_DIAMOND},
 	        {"ov-poly", EXCAL_OV_POLY},       {"ov-grid", EXCAL_OV_GRID},
@@ -156,6 +158,7 @@ static void free_element(ExcalElement *e)
 	free(e->text);
 	free(e->text_align);
 	free(e->start_arrowhead);
+	free(e->sticky_footer);
 	free(e->end_arrowhead);
 	free(e->pressures);
 }
@@ -229,6 +232,7 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->end_arrowhead = get_string(env, SLOT(SLOT_END_ARROWHEAD));
 	read_text_extras(env, SLOT(SLOT_TEXT_EXTRAS), e);
 	read_shape_extras(env, SLOT(SLOT_SHAPE_EXTRAS), e);
+	e->sticky_footer = get_extra_string(env, SLOT(SLOT_SHAPE_EXTRAS), "stickyFooter");
 #undef SLOT
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }
@@ -555,6 +559,27 @@ static emacs_value Fexcal_native_fb_mean_diff(emacs_env *env, ptrdiff_t nargs,
 		return Qnil;
 	return env->make_float(
 	        env, excal_mean_diff(a->pixels, b->pixels, a->width, a->height));
+}
+
+/* (excal-native-seeded-random SEED COUNT)
+   Return COUNT numbers from upstream seededRandom (mulberry32).  */
+static emacs_value Fexcal_native_seeded_random(emacs_env *env, ptrdiff_t nargs,
+                                               emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	ExcalMulberry m;
+	excal_mulberry_init(&m, get_number(env, args[0], 0));
+	intmax_t count = env->extract_integer(env, args[1]);
+	if (count < 0 || count > 1000)
+		return Qnil;
+	emacs_value vector = env->funcall(
+	        env, env->intern(env, "make-vector"), 2,
+	        (emacs_value[]){env->make_integer(env, count), Qnil});
+	for (intmax_t i = 0; i < count; ++i)
+		env->vec_set(env, vector, i,
+		             env->make_float(env, excal_mulberry_next(&m)));
+	return vector;
 }
 
 /* (excal-native-fb-write-png FB FILE) */
@@ -1008,6 +1033,9 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "Return the mean colour channel difference of A and B.\n\n"
 	     "The result is a float in levels 0..255, or nil when the sizes\n"
 	     "differ.\n\n(fn A B)");
+	bind(env, "excal-native-seeded-random", Fexcal_native_seeded_random, 2,
+	     "Return COUNT numbers from upstream seededRandom for SEED.\n\n"
+	     "(fn SEED COUNT)");
 	bind(env, "excal-native-fb-write-png", Fexcal_native_fb_write_png, 2,
 	     "Write FB to FILE as PNG.\n\n(fn FB FILE)");
 #ifdef EXCAL_HAVE_LAYER

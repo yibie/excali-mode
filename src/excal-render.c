@@ -8,6 +8,7 @@
 #include "excal-render.h"
 #include "excal-overlay.h"
 #include "excal-shape.h"
+#include "excal-sticky.h"
 #include "excal-text.h"
 
 #include <cairo.h>
@@ -180,7 +181,7 @@ static void draw_element(cairo_t *cr, const ExcalElement *e,
 	bool has_fill = parse_color(e->background_color, &fill);
 
 	ExcalShape shape;
-	bool shaped = e->type != EXCAL_TEXT;
+	bool shaped = e->type != EXCAL_TEXT && e->type != EXCAL_STICKYNOTE;
 	if (shaped)
 		excal_shape_generate(e, &shape);
 
@@ -225,6 +226,11 @@ static void draw_element(cairo_t *cr, const ExcalElement *e,
 		if (has_stroke)
 			fill_outline(cr, &shape.outline, &stroke);
 		excal_shape_free(&shape);
+	} else if (e->type == EXCAL_STICKYNOTE) {
+		cairo_translate(cr, e->x, e->y);
+		excal_draw_sticky(cr, e, has_fill,
+		                  (double[]){fill.r, fill.g, fill.b, fill.a},
+		                  (double[]){stroke.r, stroke.g, stroke.b, stroke.a});
 	} else {
 		excal_draw_text(cr, e, stroke.r, stroke.g, stroke.b, stroke.a);
 	}

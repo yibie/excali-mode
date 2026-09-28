@@ -33,6 +33,9 @@
 (declare-function excal-native-layer-flush "excal-module")
 (declare-function excal--save-current-style "excal-style")
 
+(defconst excal--dragging-threshold 10
+  "DRAGGING_THRESHOLD, scene units: presses moving less count as clicks.")
+
 (defgroup excal nil
   "Excalidraw scenes on Emacs Canvas."
   :group 'multimedia)

@@ -30,9 +30,9 @@ $(error emacs-module.h not found; set EMACS_MODULE_INCLUDE=/path/to/include)
 endif
 
 SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c \
-	src/excal-preview.c src/excal-rough.c src/excal-shape.c src/excal-freehand.c
+	src/excal-preview.c src/excal-rough.c src/excal-shape.c src/excal-freehand.c src/excal-sticky.c
 HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h \
-	src/excal-preview.h src/excal-rough.h src/excal-shape.h src/excal-freehand.h
+	src/excal-preview.h src/excal-rough.h src/excal-shape.h src/excal-freehand.h src/excal-sticky.h
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))
 PACKAGES := cairo pangocairo
 

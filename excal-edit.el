@@ -137,8 +137,6 @@ Return the release event, or nil if another event ended the drag."
          'scroll))
      button)))
 
-(defconst excal--dragging-threshold 10
-  "DRAGGING_THRESHOLD: a lone bound arrow must move this far to move.")
 
 (defun excal--with-bound-arrows (elements)
   "Return ELEMENTS plus everything that follows them: bound arrows, labels."
