@@ -1,4 +1,4 @@
-# Excalidraw reference spec for the excal Emacs port
+# Excalidraw reference spec for the excali Emacs port
 
 - **Date compiled:** 2026-09-27
 - **Describes:** `excalidraw/excalidraw` **`master` as fetched on 2026-09-27**. Sourcegraph reported commit `438d898` for App.tsx lookups. Source files were read through raw.githubusercontent.com, the GitHub contents API and the Sourcegraph search API.
@@ -2691,7 +2691,7 @@ This order is written for the current spike's architecture: an Elisp document mo
 | 16 | **Binding (simple path)**: bind on create or drag within the bind distance, `fixedPoint` computation, orbit vs inside, updating bound arrows when shapes move or resize, unbinding, bound text following its container, highlight rendering. | 14, 15 | Moving a shape drags connected arrows correctly. | 3b.7, 2c.10 |
 | 17 | **Elbow arrows**: A* routing on the dynamic grid, headings, `fixedSegments`. The largest single algorithm; port `elbowArrow.ts` nearly verbatim. | 16 | Elbow arrows reroute like upstream. | 2a.12 |
 | 18 | **Frames (behavior)**: membership on create or drag-in, moving the frame moves its children, deleting releases children, name editing. | 10, 14 | Frame workflows. | 3b.9 |
-| 19 | **Clipboard**: `excalidraw/clipboard` JSON through the Emacs kill ring / system clipboard, paste with new ids/seeds, remapped group/bind/frame ids, and positioning. Duplicate (Ctrl-D, Alt-drag) reuses the same id-remapping code. | 13, 16 | Copy/paste between excal and excalidraw.com works both ways. | 1b.9, 3b.6 |
+| 19 | **Clipboard**: `excalidraw/clipboard` JSON through the Emacs kill ring / system clipboard, paste with new ids/seeds, remapped group/bind/frame ids, and positioning. Duplicate (Ctrl-D, Alt-drag) reuses the same id-remapping code. | 13, 16 | Copy/paste between excali and excalidraw.com works both ways. | 1b.9, 3b.6 |
 | 20 | **Fractional index**: port `packages/fractional-indexing` and call the equivalent of `syncMovedIndices` on insert/reorder/paste. Array order stays authoritative for z-order. Needed for files to stay valid in upstream (collab merge relies on it). | 0 | z-order actions keep indices valid. | 1b.10 |
 | 21 | **Export**: PNG (Cairo surface, padding 10, scale, background, dark mode, tEXt embed), SVG (Cairo SVG surface or a hand-written emitter, with the metadata payload), `.excalidraw` save. Reading embedded scenes back from PNG/SVG is an import path. | 3–10 | Exported PNG/SVG re-import into excalidraw.com with the scene. | 1b.6–1b.8 |
 | 22 | **Library**: `.excalidrawlib` v1/v2 load/merge/save, and inserting an item (new ids, placement at the cursor or on a grid). | 19 | Library round-trip with upstream. | 1b.5 |

@@ -1,13 +1,13 @@
-Fonts for excal
+Fonts for excali
 ===============
 
 Font files in this directory (and its subdirectories) are registered
-with the font backend when excal-text.el loads, before any text is
+with the font backend when excali-text.el loads, before any text is
 measured.  They are not committed: `make fonts` downloads them.
 
     make fonts        # needs curl and network access
 
-What `make fonts` does (fonts/excal-fetch-fonts.el):
+What `make fonts` does (fonts/excali-fetch-fonts.el):
 
 - Lists packages/excalidraw/fonts/<Dir> of excalidraw/excalidraw@master
   through the GitHub contents API and downloads every .woff2 in
@@ -23,7 +23,7 @@ Font backends
 -------------
 
 The module registers each file with every backend it was built with and
-reports success for the one Pango uses (`M-x excal-font-report` shows
+reports success for the one Pango uses (`M-x excali-font-report` shows
 the font map and which fonts actually render each family):
 
 - CoreText (macOS; Homebrew Pango 1.58 uses PangoCairoCoreTextFontMap):
@@ -38,8 +38,8 @@ the font map and which fonts actually render each family):
 
 After registering, the module drops Pango's default font map so the new
 fonts are seen.  Without the files, text falls back to system fonts in
-the order given by `excal-font-families` (built-in lists in
-src/excal-text.c: the family, Xiaolai for Excalifont, then Helvetica /
+the order given by `excali-font-families` (built-in lists in
+src/excali-text.c: the family, Xiaolai for Excalifont, then Helvetica /
 Arial / DejaVu Sans, CJK system fonts, and emoji fonts).  Metrics used
 for layout (line height, baseline) always come from Excalidraw's
 FONT_METADATA for the element's font id, so layout heights match

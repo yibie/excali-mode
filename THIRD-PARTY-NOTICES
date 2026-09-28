@@ -1,7 +1,7 @@
 Third-party notices
 ===================
 
-excal-mode is licensed under the GNU General Public License, version 3
+excali-mode is licensed under the GNU General Public License, version 3
 or later (see LICENSE).  Parts of it are ports of the following
 projects, whose licenses require these notices.
 
@@ -12,15 +12,15 @@ Excalidraw (https://github.com/excalidraw/excalidraw)
   sources and src/.
 
 roughjs 4.6.4 (https://github.com/rough-stuff/rough)
-  The hand-drawn stroke and fill generator.  Ported in src/excal-rough.c
-  and src/excal-shape.c.
+  The hand-drawn stroke and fill generator.  Ported in src/excali-rough.c
+  and src/excali-shape.c.
 
 perfect-freehand 1.2.0 (https://github.com/steveruizok/perfect-freehand)
-  Pressure-sensitive freedraw outlines.  Ported in src/excal-freehand.c.
+  Pressure-sensitive freedraw outlines.  Ported in src/excali-freehand.c.
 
 fractional-indexing (https://github.com/rocicorp/fractional-indexing)
   Order-key generation, dedicated to the public domain under CC0 1.0 by
-  David Greenspan and Rocicorp.  Ported in excal-index.el.
+  David Greenspan and Rocicorp.  Ported in excali-index.el.
 
 Fonts fetched by `make fonts' are not part of this repository; they
 keep their own licenses (SIL Open Font License for Excalifont, Nunito,
