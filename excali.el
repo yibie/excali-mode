@@ -72,7 +72,6 @@
      ,(format "Select the %s tool." tool)
      (interactive)
      (excali-select-tool ',tool)
-     (excali--update-pointer)
      (message "Tool: %s" excali--tool)))
 
 
@@ -224,7 +223,8 @@ or deselect."
   (add-hook 'window-buffer-change-functions #'excali--window-size-change)
   ;; One undo step per command that changed the scene.
   (add-hook 'pre-command-hook #'excali--flowchart-pre-command nil t)
-  (add-hook 'post-command-hook #'excali--commit nil t))
+  (add-hook 'post-command-hook #'excali--commit nil t)
+  (add-hook 'post-command-hook #'excali--schedule-pointer-update nil t))
 
 (defun excali--open (doc file name)
   "Show DOC saved to FILE in a buffer called NAME.

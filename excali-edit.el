@@ -51,13 +51,8 @@ The box is the selection bounds padded like `draw_selection'."
 
 ;;;; Pointer shape
 
-(defun excali--update-pointer ()
-  "Recompute the pointer shape at the current mouse position."
-  (when-let* ((xy (excali--mouse-scene-xy)))
-    (excali--set-pointer (excali--cursor-at xy))))
-
 (defun excali-mouse-move (event)
-  "Update the pointer shape for mouse movement EVENT."
+  "Follow mouse movement EVENT: hover effects and multi-point lines."
   (interactive "e")
   (let ((posn (event-start event)))
     (when (and (eq (posn-window posn) (get-buffer-window (current-buffer)))
@@ -67,7 +62,10 @@ The box is the selection bounds padded like `draw_selection'."
           (excali--multi-move xy))
         (when-let* ((damage (excali--elbow-track-hover xy)))
           (excali--render damage))
-        (excali--set-pointer (excali--cursor-at xy))))))
+        ;; The pointer map switches shapes itself; only the module's
+        ;; view needs telling (`excali-native-cursors').
+        (when excali--cursor-view-shown
+          (excali--set-pointer (excali--cursor-at xy)))))))
 
 ;;;; Dragging
 
@@ -326,14 +324,12 @@ adds to it."
       ('hand
        (excali--pan-drag event 'mouse-1))
       (tool (excali--create tool event start)))
-    (excali--render)
-    (excali--update-pointer)))
+    (excali--render)))
 
 (defun excali-mouse-pan (event)
   "Pan the view while the middle button, pressed at EVENT, is held."
   (interactive "e")
-  (excali--pan-drag event 'mouse-2)
-  (excali--update-pointer))
+  (excali--pan-drag event 'mouse-2))
 
 (defun excali--await-release ()
   "Consume input until the mouse button that started this command is released.
@@ -396,8 +392,7 @@ element is created."
      (t
       (setq excali--tool 'select)
       (excali--insert-text (car xy) (cdr xy))))
-    (excali--render)
-    (excali--update-pointer)))
+    (excali--render)))
 
 ;;;; Text
 

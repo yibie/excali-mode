@@ -67,7 +67,6 @@
 (defvar-local excali--selected-points nil "Indices of the points selected in the editor.")
 (defvar-local excali--marquee nil
   "Box-selection rectangle (X1 Y1 X2 Y2) in scene units while dragging.")
-(defvar-local excali--pointer nil "Pointer shape currently shown over the canvas.")
 (defvar-local excali--rendered-origin nil
   "View origin of the framebuffer's contents; see `excali--view-origin'.")
 (defvar-local excali--pan-remainder '(0.0 . 0.0)

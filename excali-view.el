@@ -15,7 +15,8 @@
 (require 'excali-text)
 (require 'excali-image)
 
-(declare-function excali--update-pointer "excali-edit")
+(declare-function excali--update-pointer "excali-cursor")
+(defvar excali--pointer-surfaces)
 (declare-function excali--sync-cursor-view "excali-cursor")
 (declare-function excali--hide-cursor-view "excali-cursor")
 (declare-function excali--overlay-natives "excali-handles")
@@ -378,8 +379,10 @@ A full render follows once no step came for `excali-zoom-preview-delay'."
         (if (and (numberp scale) (> scale 0)) (float scale) 1.0))))
 
 (defun excali--make-canvas (width height)
-  "Return a WIDTH by HEIGHT device-pixel canvas for the current scale."
-  (list 'image :type 'canvas :id (gensym "excali-canvas-")
+  "Return a WIDTH by HEIGHT device-pixel canvas for the current scale.
+`:map' comes first so that changing the pointer map in place leaves the
+image cache's hash alone (see excali-cursor.el)."
+  (list 'image :map nil :type 'canvas :id (gensym "excali-canvas-")
         :data-width width :data-height height
         :scale (/ 1.0 excali--pixel-scale) :ascent 'center))
 
@@ -450,11 +453,22 @@ Return a list of (OFFSET . LENGTH)."
            (insert (propertize " " 'display excali--canvas)))
           ('tiles (excali--insert-tiles width height))
           ('layer
-           ;; Reserve the area so mouse events land in the text area.
-           (insert (propertize " " 'display
-                               `(space :width (,width) :height (,height))))))
+           ;; The layer shows the pixels; underneath, a 1x1 canvas stretched
+           ;; over the window takes mouse events and carries the pointer map.
+           (setq excali--canvas
+                 (list 'image :map nil :type 'canvas :id (gensym "excali-pointer-")
+                       :data-width 1 :data-height 1 :width width :height height
+                       :scale 1 :ascent 'center))
+           (insert (propertize " " 'display excali--canvas))))
         (goto-char (point-min))
-        (setq excali--pointer nil))
+        (setq excali--pointer-surfaces
+              (if (eq excali--backend 'tiles)
+                  (mapcar (lambda (tile)
+                            (cons (aref tile 0)
+                                  (cons (round (/ (aref tile 1) excali--pixel-scale))
+                                        (round (/ (aref tile 2) excali--pixel-scale)))))
+                          excali--tiles)
+                (list (cons excali--canvas (cons 0 0))))))
       ;; Canvas pixel buffers exist only once the images are displayed.
       (redisplay t))
     (if (eq excali--backend 'layer)
@@ -462,7 +476,7 @@ Return a list of (OFFSET . LENGTH)."
       (excali--hide-layer))
     (excali--sync-cursor-view window width height)
     (excali--render)
-    (excali--update-pointer)))
+    (excali--update-pointer t)))
 
 (defun excali--window-size-change (frame)
   "Resize or hide the surfaces of excali buffers after FRAME changed."

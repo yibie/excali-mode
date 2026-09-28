@@ -158,15 +158,6 @@
      (setq excali--tool 'rectangle)
      (should (eq (excali--cursor-at '(60.0 . 45.0)) 'crosshair)))))
 
-(ert-deftest excali-test-set-pointer-is-silent ()
-  "Changing the pointer does not mark the buffer modified."
-  (excali-test--with-scene
-   (insert "  ")
-   (set-buffer-modified-p nil)
-   (excali--set-pointer 'pointer)
-   (should (eq (get-text-property 1 'pointer) 'hand))
-   (should-not (buffer-modified-p))))
-
 ;; Scroll reuse
 
 (defmacro excali-test--with-view (width height &rest body)
