@@ -57,6 +57,7 @@
 (defvar-local excal--selection nil "Selected element alists, in z-order.")
 (defvar-local excal--editing-group nil
   "Group id entered by double-clicking, or nil; see `excal--unit'.")
+(defvar-local excal--theme 'light "Color theme of the canvas: `light' or `dark'.")
 (defvar-local excal--editing-linear nil "Line or arrow in point-edit mode, or nil.")
 (defvar-local excal--selected-points nil "Indices of the points selected in the editor.")
 (defvar-local excal--marquee nil

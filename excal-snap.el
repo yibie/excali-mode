@@ -198,7 +198,7 @@ INVERT flips the object-snap setting.  Sets `excal--snap-lines'."
     (dolist (line excal--snap-lines)
       (let ((origin (car line)))
         (let ((ov (excal--ov "ov-poly" (car origin) (cdr origin) 0 0
-                             :stroke excal--snap-color)))
+                             :stroke (if (eq excal--theme 'dark) "#ff9090" excal--snap-color))))
           (aset ov 12 (vconcat (apply #'append
                                       (mapcar (lambda (p) (list (- (car p) (car origin))
                                                                 (- (cdr p) (cdr origin))))
@@ -208,7 +208,7 @@ INVERT flips the object-snap setting.  Sets `excal--snap-lines'."
           (dolist (d (list (list (- cross) (- cross) cross cross)
                            (list (- cross) cross cross (- cross))))
             (let ((ov (excal--ov "ov-poly" (+ (car p) (nth 0 d)) (+ (cdr p) (nth 1 d)) 0 0
-                                 :stroke excal--snap-color)))
+                                 :stroke (if (eq excal--theme 'dark) "#ff9090" excal--snap-color))))
               (aset ov 12 (vector 0.0 0.0 (- (nth 2 d) (nth 0 d)) (- (nth 3 d) (nth 1 d))))
               (push ov natives))))))
     natives))

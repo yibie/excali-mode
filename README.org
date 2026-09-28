@@ -50,6 +50,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =s-L= | lock / unlock elements |
 | =s-k=, click a link icon | set a link (URL or =?element=ID=), follow it |
 | =s-'=, =M-s= | grid, object snapping (super at the press suppresses/inverts) |
+| =M-D= | toggle the dark theme |
 | =C-c l a=, =C-c l i=, =C-c l b= | library: add selection, insert items, browse |
 | =M-s-c= =M-s-v=, =s-<= =s->= | copy / paste styles, font size |
 | wheel, =C-=wheel / pinch, middle drag | pan, zoom, pan |

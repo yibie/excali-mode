@@ -205,6 +205,14 @@ so only the newly exposed strips need painting."
             (push (excal--damage-vector damage) rects))
           (if rects (vconcat rects) 'none))))))
 
+(defun excal-toggle-theme ()
+  "Switch the canvas between the light and dark themes."
+  (interactive)
+  (setq excal--theme (if (eq excal--theme 'dark) 'light 'dark))
+  (when excal--native-cache (clrhash excal--native-cache))
+  (excal--render)
+  (message "Theme: %s" excal--theme))
+
 (defun excal--canvas-color ()
   "Return the scene's background color, `viewBackgroundColor', or nil."
   (let ((color (alist-get 'viewBackgroundColor (alist-get 'appState excal--doc))))
@@ -226,7 +234,7 @@ zoom preview on screen is replaced by a full render."
                      excal--fb excal--pixel-scale excal--zoom
                      excal--scroll-x excal--scroll-y
                      (excal--visible-elements) plan
-                     (excal--canvas-color)))))
+                     (excal--canvas-color) (eq excal--theme 'dark)))))
       (excal--present-frame t0 drawn nil))))
 
 (defun excal--present-frame (start drawn preview)

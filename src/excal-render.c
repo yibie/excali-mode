@@ -38,7 +38,42 @@ static int hex_digit(char c)
 	return -1;
 }
 
+void excal_dark_filter(double rgb[3])
+{
+	/* invert(0.93): c * (1 - p) + (1 - c) * p.  */
+	double c[3];
+	for (int i = 0; i < 3; ++i)
+		c[i] = rgb[i] * (1 - 0.93) + (1 - rgb[i]) * 0.93;
+	/* hue-rotate(180deg): the CSS filter matrix with cos = -1, sin = 0.  */
+	static const double m[3][3] = {{-0.574, 1.430, 0.144},
+	                               {0.426, 0.430, 0.144},
+	                               {0.426, 1.430, -0.856}};
+	for (int i = 0; i < 3; ++i) {
+		double v = m[i][0] * c[0] + m[i][1] * c[1] + m[i][2] * c[2];
+		rgb[i] = fmin(1, fmax(0, v));
+	}
+}
+
+/* Whether the render in progress uses the dark theme.  Rendering is
+   single-threaded, and every render sets it.  */
+static bool render_dark;
+
+static bool parse_raw_color(const char *s, Rgba *out);
+
+/* Parse color S as drawn in the current theme.  */
 static bool parse_color(const char *s, Rgba *out)
+{
+	if (!parse_raw_color(s, out))
+		return false;
+	if (render_dark) {
+		double rgb[3] = {out->r, out->g, out->b};
+		excal_dark_filter(rgb);
+		out->r = rgb[0], out->g = rgb[1], out->b = rgb[2];
+	}
+	return true;
+}
+
+static bool parse_raw_color(const char *s, Rgba *out)
 {
 	if (!s || !*s || strcmp(s, "transparent") == 0)
 		return false;
@@ -284,6 +319,7 @@ static void element_bounds(const ExcalElement *e, double *x1, double *y1,
 size_t excal_render(uint32_t *pixels, const ExcalView *view,
                     const ExcalElement *elements, size_t count)
 {
+	render_dark = view->dark;
 	cairo_surface_t *surface = cairo_image_surface_create_for_data(
 	        (unsigned char *)pixels, CAIRO_FORMAT_ARGB32, view->width,
 	        view->height, view->width * 4);
@@ -299,8 +335,13 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 		cairo_clip(cr);
 	}
 	Rgba canvas = {1, 1, 1, 1}, parsed;
-	if (parse_color(view->background_color, &parsed))
+	if (parse_color(view->background_color, &parsed)) {
 		canvas = parsed;
+	} else if (render_dark) {
+		double rgb[3] = {1, 1, 1};
+		excal_dark_filter(rgb);
+		canvas = (Rgba){rgb[0], rgb[1], rgb[2], 1};
+	}
 	cairo_set_source_rgba(cr, canvas.r, canvas.g, canvas.b, canvas.a);
 	cairo_paint(cr);
 
@@ -326,7 +367,7 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 	for (size_t i = 0; i < count; ++i)
 		if (elements[i].type == EXCAL_OV_GRID)
 			excal_draw_grid(cr, &elements[i], view->zoom,
-			                view->pixel_scale);
+			                view->pixel_scale, view->dark);
 	bool *visible = calloc(count ? count : 1, sizeof *visible);
 	size_t drawn = 0;
 	for (size_t i = 0; i < count; ++i) {

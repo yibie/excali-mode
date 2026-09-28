@@ -165,10 +165,10 @@ Upstream `getLinkHandleFromCoords', unrotated."
         (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) (excal--link-icon-box e))
                      (w (- x2 x1)) (h (- y2 y1))
                      (arrow (excal--ov "ov-poly" (+ x1 (* 0.3 w)) (+ y1 (* 0.3 h)) 0 0
-                                       :stroke excal-selection-color :width 1.5)))
+                                       :stroke (excal--selection-color) :width 1.5)))
           (aset arrow 12 (vector (* 0.4 w) 0.0 (* 0.4 w) (* 0.4 h)
                                  (* 0.4 w) 0.0 0.0 (* 0.4 h)))
-          (push (excal--ov "ov-handle" x1 y1 w h :stroke excal-selection-color
+          (push (excal--ov "ov-handle" x1 y1 w h :stroke (excal--selection-color)
                            :fill "#ffffff" :width 1)
                 overlays)
           (push arrow overlays))))))

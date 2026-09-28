@@ -24,6 +24,11 @@
 (require 'excal-select)
 
 (defconst excal-selection-color "#6965db" "Color of selection borders and handles.")
+(defconst excal-selection-color-dark "#b4b0ff" "Selection color in the dark theme.")
+
+(defun excal--selection-color ()
+  "Return the selection color for the buffer's theme."
+  (if (eq excal--theme 'dark) excal-selection-color-dark excal-selection-color))
 
 (declare-function excal--binding-highlight-overlay "excal-binding")
 (declare-function excal--linear-editor-overlays "excal-linear")
@@ -208,7 +213,7 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
   (mapcar (lambda (h)
             (pcase-let ((`(,name ,x ,y ,w ,hh) h))
               (excal--ov (if (eq name 'rotation) "ov-circle" "ov-handle") x y w hh
-                         :stroke excal-selection-color :fill "#ffffff")))
+                         :stroke (excal--selection-color) :fill "#ffffff")))
           (excal--transform-handles (plist-get target :box) (plist-get target :angle)
                                     (plist-get target :margin)
                                     (plist-get target :spacing)
@@ -228,7 +233,7 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
         (unless (memq e grouped)
           (push (excal--ov-box (excal--element-box e) (* 2 excal--handle-spacing)
                                :angle (excal--element-angle e)
-                               :stroke excal-selection-color)
+                               :stroke (excal--selection-color))
                 overlays)))
       ;; One dashed box per selected group, and for the entered group.
       (dolist (members (append (mapcar #'cdr groups)
@@ -241,7 +246,7 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
                 overlays)))
       (when (cdr excal--selection)
         (push (excal--ov-box (excal--selection-bounds) (* 2 excal--handle-spacing)
-                             :stroke excal-selection-color :style "dotted")
+                             :stroke (excal--selection-color) :style "dotted")
               overlays))
       (when-let* ((target (excal--transform-target)))
         ;; OVERLAYS is built in reverse; keep the handles in order.
@@ -251,7 +256,7 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
       (dolist (ov (excal--linear-editor-overlays))
         (push ov overlays)))
     (when excal--marquee
-      (push (excal--ov-box excal--marquee 0 :stroke excal-selection-color
+      (push (excal--ov-box excal--marquee 0 :stroke (excal--selection-color)
                            :fill "#0000c80a")
             overlays))
     (when-let* ((highlight (and (fboundp 'excal--binding-highlight-overlay)

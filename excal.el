@@ -151,6 +151,7 @@ or deselect."
   "S-<prior>" #'excal-page-left "S-<next>" #'excal-page-right
   ;; Files and debugging.
   "s-'" #'excal-toggle-grid "M-s" #'excal-toggle-objects-snap
+  "M-D" #'excal-toggle-theme
   "s-s" #'excal-save "C-x C-s" #'excal-save
   "C-c C-b" #'excal-cycle-backend
   "C-c C-p" #'excal-toggle-pixel-scale

@@ -135,8 +135,14 @@ void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom)
    one solid #dddddd, the rest dashed #e5e5e5 and hidden when closer than
    10 screen px; all one device pixel wide and pixel-aligned.  */
 void excal_draw_grid(cairo_t *cr, const ExcalElement *e, double zoom,
-                     double pixel_scale)
+                     double pixel_scale, bool dark)
 {
+	double bold_rgb[3] = {0xdd / 255.0, 0xdd / 255.0, 0xdd / 255.0};
+	double minor_rgb[3] = {0xe5 / 255.0, 0xe5 / 255.0, 0xe5 / 255.0};
+	if (dark) {
+		excal_dark_filter(bold_rgb);
+		excal_dark_filter(minor_rgb);
+	}
 	double size = e->stroke_width;
 	int step = (int)e->font_size;
 	if (size < 1)
@@ -159,14 +165,14 @@ void excal_draw_grid(cairo_t *cr, const ExcalElement *e, double zoom,
 			double pos = (floor(v * device) + 0.5) / device;
 			if (bold) {
 				cairo_set_dash(cr, NULL, 0, 0);
-				cairo_set_source_rgb(cr, 0xdd / 255.0, 0xdd / 255.0,
-				                     0xdd / 255.0);
+				cairo_set_source_rgb(cr, bold_rgb[0], bold_rgb[1],
+				                     bold_rgb[2]);
 			} else {
 				double space = 1 / zoom;
 				double dash[] = {width * 3, space + width + space};
 				cairo_set_dash(cr, dash, 2, 0);
-				cairo_set_source_rgb(cr, 0xe5 / 255.0, 0xe5 / 255.0,
-				                     0xe5 / 255.0);
+				cairo_set_source_rgb(cr, minor_rgb[0], minor_rgb[1],
+				                     minor_rgb[2]);
 			}
 			if (axis) {
 				cairo_move_to(cr, x1 - size, pos);

@@ -338,7 +338,8 @@ resize by HANDLE (with KEEP-ASPECT and FROM-CENTER) when HANDLE is given."
                    ("ellipse" "ov-ellipse") ("diamond" "ov-diamond") (_ "ov-rect"))
                  x1 y1 (- x2 x1) (- y2 y1)
                  :angle (excal--element-angle e)
-                 :stroke excal--binding-highlight-color
+                 :stroke (if (eq excal--theme 'dark) "#68b6f0"
+                           excal--binding-highlight-color)
                  :width (min 4 (max 1.75 (or (excal--get e 'strokeWidth) 1)))))))
 
 (provide 'excal-binding)

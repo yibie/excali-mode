@@ -361,6 +361,7 @@ static emacs_value Fexcal_native_fb_render(emacs_env *env, ptrdiff_t nargs,
 	        .scroll_x = get_number(env, args[3], 0),
 	        .scroll_y = get_number(env, args[4], 0),
 	        .background_color = background,
+	        .dark = nargs > 8 && env->is_not_nil(env, args[8]),
 	};
 	/* DAMAGE is nil, [X Y W H], or a vector of such rectangles.  */
 	emacs_value damage = args[6];
@@ -996,13 +997,14 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excal-native-fb-create", Fexcal_native_fb_create, 2,
 	     "Return a WIDTH by HEIGHT offscreen framebuffer.\n\n"
 	     "(fn WIDTH HEIGHT)");
-	bind_range(env, "excal-native-fb-render", Fexcal_native_fb_render, 7, 8,
+	bind_range(env, "excal-native-fb-render", Fexcal_native_fb_render, 7, 9,
 	     "Render ELEMENTS into FB, repainting only DAMAGE if non-nil.\n\n"
-	     "BACKGROUND, a \"#rrggbb\" string, is the canvas color (white).\n"
+	     "BACKGROUND, a \"#rrggbb\" string, is the canvas color (white);\n"
+	     "DARK draws every color through the dark theme filter.\n"
 	     "DAMAGE is a vector [X Y WIDTH HEIGHT] in device pixels, or a\n"
 	     "vector of such vectors.\n"
 	     "Return the number of elements drawn.\n\n"
-	     "(fn FB PIXEL-SCALE ZOOM SCROLL-X SCROLL-Y ELEMENTS DAMAGE &optional BACKGROUND)");
+	     "(fn FB PIXEL-SCALE ZOOM SCROLL-X SCROLL-Y ELEMENTS DAMAGE &optional BACKGROUND DARK)");
 	bind(env, "excal-native-fb-scroll", Fexcal_native_fb_scroll, 3,
 	     "Shift FB's pixels by DX, DY device pixels.\n\n"
 	     "Pixels shifted in keep stale contents and must be repainted.\n\n"

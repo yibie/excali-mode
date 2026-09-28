@@ -85,7 +85,12 @@ typedef struct {
 	/* Canvas background colour for outline arrowheads ("#rrggbb"), or
 	   NULL for white.  */
 	const char *background_color;
+	bool dark; /* Draw colors through the dark theme filter.  */
 } ExcalView;
+
+/* Upstream applyDarkModeFilter: CSS invert(93%) then hue-rotate(180deg),
+   applied in place to RGB components in [0, 1].  */
+void excal_dark_filter(double rgb[3]);
 
 /* Render ELEMENTS into the ARGB32 PIXELS buffer.  Return the number of
    elements actually drawn after culling.  */
