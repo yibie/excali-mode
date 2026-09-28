@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "excal-preview.h"
 #include "excal-render.h"
 #ifdef EXCAL_HAVE_LAYER
 #include "excal-layer.h"
@@ -400,6 +401,63 @@ static emacs_value Fexcal_native_fb_diff(emacs_env *env, ptrdiff_t nargs,
 	return env->make_integer(env, worst);
 }
 
+/* (excal-native-fb-copy SRC DST)
+   Copy SRC's pixels into DST; return nil when their sizes differ.  */
+static emacs_value Fexcal_native_fb_copy(emacs_env *env, ptrdiff_t nargs,
+                                         emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	Framebuffer *src = get_framebuffer(env, args[0]);
+	Framebuffer *dst = get_framebuffer(env, args[1]);
+	if (!src || !dst || src->width != dst->width ||
+	    src->height != dst->height)
+		return Qnil;
+	if (src != dst)
+		memcpy(dst->pixels, src->pixels,
+		       (size_t)src->width * src->height * 4);
+	return Qt;
+}
+
+/* (excal-native-fb-zoom-preview DST SRC SCALE TX TY)
+   Fill DST with SRC scaled by SCALE, then shifted by TX, TY.  */
+static emacs_value Fexcal_native_fb_zoom_preview(emacs_env *env,
+                                                 ptrdiff_t nargs,
+                                                 emacs_value *args,
+                                                 void *data)
+{
+	(void)nargs;
+	(void)data;
+	Framebuffer *dst = get_framebuffer(env, args[0]);
+	Framebuffer *src = get_framebuffer(env, args[1]);
+	double scale = get_number(env, args[2], 1);
+	double tx = get_number(env, args[3], 0);
+	double ty = get_number(env, args[4], 0);
+	if (!dst || !src || dst->width != src->width ||
+	    dst->height != src->height || !(scale > 0))
+		return Qnil;
+	return excal_zoom_preview(dst->pixels, src->pixels, dst->width,
+	                          dst->height, scale, tx, ty)
+	               ? Qt
+	               : Qnil;
+}
+
+/* (excal-native-fb-mean-diff A B)
+   Return the mean colour channel difference of A and B as a float, or
+   nil when their sizes differ.  */
+static emacs_value Fexcal_native_fb_mean_diff(emacs_env *env, ptrdiff_t nargs,
+                                              emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	Framebuffer *a = get_framebuffer(env, args[0]);
+	Framebuffer *b = get_framebuffer(env, args[1]);
+	if (!a || !b || a->width != b->width || a->height != b->height)
+		return Qnil;
+	return env->make_float(
+	        env, excal_mean_diff(a->pixels, b->pixels, a->width, a->height));
+}
+
 /* (excal-native-fb-write-png FB FILE) */
 static emacs_value Fexcal_native_fb_write_png(emacs_env *env, ptrdiff_t nargs,
                                               emacs_value *args, void *data)
@@ -588,6 +646,20 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excal-native-fb-diff", Fexcal_native_fb_diff, 2,
 	     "Return the largest channel difference between A and B.\n\n"
 	     "(fn A B)");
+	bind(env, "excal-native-fb-copy", Fexcal_native_fb_copy, 2,
+	     "Copy SRC's pixels into DST of the same size.\n\n"
+	     "Return nil when the sizes differ.\n\n(fn SRC DST)");
+	bind(env, "excal-native-fb-zoom-preview",
+	     Fexcal_native_fb_zoom_preview, 5,
+	     "Fill DST with SRC scaled by SCALE, then shifted by TX, TY.\n\n"
+	     "A device pixel P of SRC lands at SCALE * P + (TX, TY) in DST,\n"
+	     "with bilinear filtering; uncovered pixels become white.  DST\n"
+	     "may be SRC.  Return nil when the sizes differ.\n\n"
+	     "(fn DST SRC SCALE TX TY)");
+	bind(env, "excal-native-fb-mean-diff", Fexcal_native_fb_mean_diff, 2,
+	     "Return the mean colour channel difference of A and B.\n\n"
+	     "The result is a float in levels 0..255, or nil when the sizes\n"
+	     "differ.\n\n(fn A B)");
 	bind(env, "excal-native-fb-write-png", Fexcal_native_fb_write_png, 2,
 	     "Write FB to FILE as PNG.\n\n(fn FB FILE)");
 #ifdef EXCAL_HAVE_LAYER

@@ -11,6 +11,9 @@
 (require 'excal-core)
 
 (declare-function excal--update-pointer "excal-edit")
+(declare-function excal-native-fb-copy "excal-module")
+(declare-function excal-native-fb-zoom-preview "excal-module")
+(declare-function excal-native-fb-mean-diff "excal-module")
 
 (defun excal--flat-points (points)
   "Convert JSON POINTS array of [x y] into a flat float vector."
@@ -59,14 +62,31 @@
                                  (excal--native-element e)))
                              excal--elements))))
 
-(defcustom excal-backend 'tiles
+(defcustom excal-backend 'auto
   "How rendered pixels reach the screen.
 `canvas' copies each frame into one Canvas image.  `tiles' splits the
 window into Canvas tiles and refreshes only those whose pixels changed.
 `layer' (macOS only) shows frames in a CoreAnimation overlay above the
-Emacs view, bypassing `canvas-refresh' entirely."
-  :type '(choice (const canvas) (const tiles) (const layer))
+Emacs view, bypassing `canvas-refresh' entirely.  `auto' uses `layer'
+on graphical macOS frames when the module provides it, else `tiles'."
+  :type '(choice (const auto) (const canvas) (const tiles) (const layer))
   :group 'excal)
+
+(defun excal--layer-frame-p (frame)
+  "Return non-nil if FRAME is a graphical macOS frame."
+  (eq (framep frame) 'ns))
+
+(defun excal--resolve-backend (&optional frame)
+  "Return the backend a new buffer on FRAME should use.
+FRAME defaults to the selected frame.  Resolve `auto' in
+`excal-backend', and fall back to `tiles' where `layer' is unavailable."
+  (let ((layer (fboundp 'excal-native-layer-create)))
+    (pcase excal-backend
+      ('auto (if (and layer (excal--layer-frame-p (or frame (selected-frame))))
+                 'layer
+               'tiles))
+      ('layer (if layer 'layer 'tiles))
+      (backend backend))))
 
 (defcustom excal-tile-size 256
   "Maximum tile edge in logical pixels for the `tiles' backend."
@@ -122,7 +142,9 @@ so only the newly exposed strips need painting."
   "Render the scene and present it.
 DAMAGE nil repaints everything.  `scroll' means only the view moved; a
 device rectangle (X1 Y1 X2 Y2) marks changed scene content.  See
-`excal--plan-repaint' for how moved views reuse existing pixels."
+`excal--plan-repaint' for how moved views reuse existing pixels.  A
+zoom preview on screen is replaced by a full render."
+  (excal--cancel-preview)
   (when excal--fb
     (let* ((t0 (float-time))
            (plan (excal--plan-repaint damage))
@@ -131,15 +153,118 @@ device rectangle (X1 Y1 X2 Y2) marks changed scene content.  See
                     (excal-native-fb-render
                      excal--fb excal--pixel-scale excal--zoom
                      excal--scroll-x excal--scroll-y
-                     (excal--visible-elements) plan)))
-           (t1 (float-time))
-           (refreshed (excal--present))
-           (t2 (float-time)))
-      (setq excal--last-render-time (- t1 t0)
-            excal--last-stats (list :drawn drawn
-                                    :render-ms (* 1000 (- t1 t0))
-                                    :present-ms (* 1000 (- t2 t1))
-                                    :refreshed refreshed)))))
+                     (excal--visible-elements) plan))))
+      (excal--present-frame t0 drawn nil))))
+
+(defun excal--present-frame (start drawn preview)
+  "Present the framebuffer and record stats for a frame begun at START.
+DRAWN is the number of elements rendered; PREVIEW is non-nil when the
+frame is a zoom preview."
+  (let* ((t1 (float-time))
+         (refreshed (excal--present))
+         (t2 (float-time)))
+    (setq excal--last-render-time (- t1 start)
+          excal--last-stats (list :drawn drawn
+                                  :render-ms (* 1000 (- t1 start))
+                                  :present-ms (* 1000 (- t2 t1))
+                                  :refreshed refreshed
+                                  :preview preview))))
+
+;;;; Zoom preview
+
+(defcustom excal-zoom-preview-delay 0.1
+  "Seconds without zoom input before a zoom preview is rendered crisply.
+While zooming, each step scales the pixels of the last full render
+instead of rendering the scene again; once zooming pauses this long a
+full render replaces the preview.  nil renders every zoom step fully."
+  :type '(choice (const :tag "Render every step" nil) number)
+  :group 'excal)
+
+(defcustom excal-zoom-preview-limit 4.0
+  "Largest factor a zoom preview may scale the last full render by.
+A zoom step that goes further (in or out) renders fully, and later
+steps preview from that render instead."
+  :type 'number
+  :group 'excal)
+
+(defvar-local excal--preview-snapshot nil
+  "Framebuffer holding a copy of the full render being previewed.")
+(defvar-local excal--preview-origin nil
+  "View origin of `excal--preview-snapshot' while a preview is shown.
+nil when no preview is shown; see `excal--view-origin'.")
+(defvar-local excal--preview-timer nil
+  "Timer that replaces the zoom preview with a full render, or nil.")
+
+(defun excal--cancel-preview ()
+  "Cancel any pending preview render and forget the preview origin.
+The framebuffer may still hold preview pixels; `excal--rendered-origin'
+is nil then, so the next render repaints everything."
+  (when excal--preview-timer
+    (cancel-timer excal--preview-timer)
+    (setq excal--preview-timer nil))
+  (setq excal--preview-origin nil))
+
+(defun excal--finish-preview (buffer)
+  "Replace the zoom preview in BUFFER with a full render.
+This runs from `excal--preview-timer'."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      ;; `excal--render' cancels the timer too.
+      (if excal--preview-origin
+          (excal--render)
+        (excal--cancel-preview)))))
+
+(defun excal--snapshot-framebuffer ()
+  "Copy the framebuffer into `excal--preview-snapshot'."
+  (unless (and excal--preview-snapshot
+               (excal-native-fb-copy excal--fb excal--preview-snapshot))
+    (setq excal--preview-snapshot
+          (excal-native-fb-create (car excal--canvas-size)
+                                  (cdr excal--canvas-size)))
+    (excal-native-fb-copy excal--fb excal--preview-snapshot)))
+
+(defun excal--preview-factor (base)
+  "Return the scale from view origin BASE to the current view, or nil.
+nil means the current view cannot be previewed from BASE."
+  (let ((new (excal--view-origin)))
+    (when (and base (= (nth 1 base) (nth 1 new)))
+      (let ((factor (/ (nth 0 new) (float (nth 0 base)))))
+        (when (<= (/ 1.0 excal-zoom-preview-limit) factor
+                  excal-zoom-preview-limit)
+          factor)))))
+
+(defun excal--render-preview ()
+  "Show the current view by transforming the last full render.
+The first preview after a full render keeps a pristine copy of it, and
+every later step scales that copy, so steps never compound blur or
+rounding.  Fall back to `excal--render' when previews are disabled, the
+framebuffer holds no exact render, or the view moved too far from it.
+A full render follows once no step came for `excal-zoom-preview-delay'."
+  (let* ((base (or excal--preview-origin excal--rendered-origin))
+         (factor (and excal-zoom-preview-delay excal--fb
+                      (excal--preview-factor base))))
+    (if (not factor)
+        (excal--render)
+      (let ((t0 (float-time))
+            (new (excal--view-origin)))
+        (unless excal--preview-origin
+          (excal--snapshot-framebuffer)
+          (setq excal--preview-origin base))
+        ;; A scene point at device pixel D in the snapshot is now at
+        ;; FACTOR * D + NEW - FACTOR * BASE.
+        (excal-native-fb-zoom-preview
+         excal--fb excal--preview-snapshot factor
+         (- (nth 2 new) (* factor (nth 2 base)))
+         (- (nth 3 new) (* factor (nth 3 base))))
+        ;; The pixels match no exact origin now: never scroll-reuse them.
+        (setq excal--rendered-origin nil)
+        (excal--present-frame t0 0 t)
+        (when excal--preview-timer
+          (cancel-timer excal--preview-timer))
+        (setq excal--preview-timer
+              (run-with-timer excal-zoom-preview-delay nil
+                              #'excal--finish-preview (current-buffer)))
+        (add-hook 'kill-buffer-hook #'excal--cancel-preview nil t)))))
 
 (defun excal--present ()
   "Push the framebuffer to the screen; return the surfaces refreshed."
@@ -362,7 +487,10 @@ so panning keeps reusing the framebuffer instead of repainting it."
     (unless (and (zerop ix) (zerop iy))
       (cl-incf excal--scroll-x (/ (float ix) excal--zoom))
       (cl-incf excal--scroll-y (/ (float iy) excal--zoom))
-      (excal--render 'scroll))))
+      ;; Pans mixed into a zoom gesture keep previewing.
+      (if excal--preview-origin
+          (excal--render-preview)
+        (excal--render 'scroll)))))
 
 (defun excal-pinch (event)
   "Zoom on pinch EVENT."
@@ -373,16 +501,21 @@ so panning keeps reusing the framebuffer instead of repainting it."
                       (posn-x-y (nth 1 event)))
       (put 'excal-pinch 'last scale))))
 
-(defun excal--zoom-at (factor xy)
-  "Multiply zoom by FACTOR keeping window point XY fixed."
+(defun excal--zoom-view (factor xy)
+  "Multiply zoom by FACTOR keeping window point XY fixed, without drawing."
   (let* ((old excal--zoom)
          (new (max 0.1 (min 30.0 (* old factor))))
          (x (float (car xy))) (y (float (cdr xy))))
     (setq excal--scroll-x (+ excal--scroll-x (- (/ x new) (/ x old)))
           excal--scroll-y (+ excal--scroll-y (- (/ y new) (/ y old)))
-          excal--zoom new)
-    (excal--render)
-    (message "Zoom %d%%" (round (* 100 new)))))
+          excal--zoom new)))
+
+(defun excal--zoom-at (factor xy)
+  "Multiply zoom by FACTOR keeping window point XY fixed.
+The step is shown as a preview; see `excal--render-preview'."
+  (excal--zoom-view factor xy)
+  (excal--render-preview)
+  (message "Zoom %d%%" (round (* 100 excal--zoom))))
 
 (defun excal-zoom-in () "Zoom in." (interactive) (excal--zoom-at 1.25 '(0 . 0)))
 (defun excal-zoom-out () "Zoom out." (interactive) (excal--zoom-at 0.8 '(0 . 0)))

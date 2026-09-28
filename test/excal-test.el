@@ -280,4 +280,156 @@
     (setq excal--scroll-x (+ excal--scroll-x 2.0))
     (should (equal (excal--plan-repaint 'scroll) [[0 0 4 100]]))))
 
+;; Zoom preview
+
+(defun excal-test--full-render ()
+  "Return a new framebuffer holding a full render of the current view."
+  (let ((full (excal-native-fb-create (car excal--canvas-size)
+                                      (cdr excal--canvas-size))))
+    (excal-native-fb-render full excal--pixel-scale excal--zoom
+                            excal--scroll-x excal--scroll-y
+                            (excal--visible-elements) nil)
+    full))
+
+(defun excal-test--preview-timers ()
+  "Return the pending timers that finish a zoom preview."
+  (cl-remove-if-not (lambda (timer)
+                      (eq (timer--function timer) #'excal--finish-preview))
+                    timer-list))
+
+(defmacro excal-test--with-preview (&rest body)
+  "Run BODY in a 400x300 view zoomed out to show a busy scene.
+Temporary buffers skip `kill-buffer-hook', so cancel the preview here."
+  `(excal-test--with-view 400 300
+     (let ((excal-zoom-preview-delay 0.1)
+           (excal-zoom-preview-limit 4.0))
+       (setq excal--zoom 0.5)
+       (excal--render)
+       (unwind-protect (progn ,@body)
+         (excal--cancel-preview)))))
+
+(ert-deftest excal-test-zoom-preview-approximates-full ()
+  "A preview is much closer to a full render than the stale pixels are."
+  (dolist (factor '(1.1 0.9 1.3 0.75))
+    (excal-test--with-preview
+     (let ((stale (excal-test--full-render)))
+       (excal--zoom-at factor '(130 . 90))
+       (should (plist-get excal--last-stats :preview))
+       (should (= (plist-get excal--last-stats :drawn) 0))
+       (let* ((full (excal-test--full-render))
+              (preview (excal-native-fb-mean-diff excal--fb full))
+              (unchanged (excal-native-fb-mean-diff stale full)))
+         (should (< preview 3.0))
+         (should (< preview (* 0.5 unchanged))))))))
+
+(ert-deftest excal-test-zoom-preview-does-not-drift ()
+  "Previews scale the last full render, so zooming back restores it."
+  (excal-test--with-preview
+   (let ((original (excal-test--full-render)))
+     (dotimes (_ 4) (excal--zoom-at 1.1 '(130 . 90)))
+     (dotimes (_ 4) (excal--zoom-at (/ 1 1.1) '(130 . 90)))
+     (should (plist-get excal--last-stats :preview))
+     (should (<= (excal-native-fb-diff excal--fb original) 2)))))
+
+(ert-deftest excal-test-zoom-preview-timer-renders-full ()
+  "The pending timer's function turns the preview into a full render."
+  (excal-test--with-preview
+   (excal--zoom-at 1.2 '(200 . 150))
+   (excal--zoom-at 1.2 '(50 . 40))
+   (should (timerp excal--preview-timer))
+   (should (equal (excal-test--preview-timers) (list excal--preview-timer)))
+   (should (equal (timer--args excal--preview-timer) (list (current-buffer))))
+   (funcall (timer--function excal--preview-timer) (current-buffer))
+   (should-not excal--preview-timer)
+   (should-not excal--preview-origin)
+   (should-not (plist-get excal--last-stats :preview))
+   (should (equal excal--rendered-origin (excal--view-origin)))
+   (should (<= (excal-test--full-render-diff) 16))))
+
+(ert-deftest excal-test-zoom-preview-blocks-scroll-reuse ()
+  "Preview pixels are never shifted as if they were exact."
+  (excal-test--with-preview
+   (excal--zoom-at 1.25 '(100 . 100))
+   (should-not excal--rendered-origin)
+   (should (null (excal--plan-repaint 'scroll)))
+   ;; Damage during a preview repaints everything and ends it.
+   (excal--zoom-at 1.25 '(100 . 100))
+   (excal--render '(0 0 10 10))
+   (should-not excal--preview-timer)
+   (should-not (plist-get excal--last-stats :preview))
+   (should (<= (excal-test--full-render-diff) 16))))
+
+(ert-deftest excal-test-zoom-preview-pan ()
+  "Pans during a preview keep previewing, then settle to a full render."
+  (excal-test--with-preview
+   (excal--zoom-at 1.2 '(100 . 100))
+   (excal--pan 7 -5)
+   (should (plist-get excal--last-stats :preview))
+   (should-not excal--rendered-origin)
+   (excal--finish-preview (current-buffer))
+   (should-not (excal-test--preview-timers))
+   (should (<= (excal-test--full-render-diff) 16))
+   ;; With the preview gone, pans reuse pixels again.
+   (excal--pan 7 -5)
+   (should-not (plist-get excal--last-stats :preview))
+   (should (<= (excal-test--full-render-diff) 16))))
+
+(ert-deftest excal-test-zoom-preview-falls-back ()
+  "Large factors, disabled previews and fresh framebuffers render fully."
+  (excal-test--with-preview
+   (excal--zoom-at 5.0 '(0 . 0))
+   (should-not (plist-get excal--last-stats :preview))
+   (should-not excal--preview-timer)
+   (let ((excal-zoom-preview-delay nil))
+     (excal--zoom-at 1.1 '(0 . 0))
+     (should-not (plist-get excal--last-stats :preview)))
+   (setq excal--rendered-origin nil)
+   (excal--zoom-at 1.1 '(0 . 0))
+   (should-not (plist-get excal--last-stats :preview))
+   (should (<= (excal-test--full-render-diff) 16))))
+
+(ert-deftest excal-test-zoom-preview-timer-cleanup ()
+  "Steps share one timer, and killing the buffer cancels it."
+  (let ((buffer (generate-new-buffer "excal-test-preview"))
+        timer)
+    (unwind-protect
+        (with-current-buffer buffer
+          (setq excal--native-cache (make-hash-table :test #'eq)
+                excal--zoom 0.5 excal--pixel-scale 1.0
+                excal--canvas-size (cons 200 100)
+                excal--fb (excal-native-fb-create 200 100)
+                excal--elements (excal--stress-elements 20))
+          (excal--render)
+          (dotimes (_ 5) (excal--zoom-at 1.05 '(10 . 10)))
+          (setq timer excal--preview-timer)
+          (should (timerp timer))
+          (should (equal (excal-test--preview-timers) (list timer))))
+      (kill-buffer buffer))
+    (should-not (memq timer timer-list))
+    (should-not (excal-test--preview-timers))
+    ;; A timer outliving its buffer does nothing.
+    (excal--finish-preview buffer)))
+
+(ert-deftest excal-test-zoom-preview-fills-white ()
+  "Pixels the scaled image does not cover are white."
+  (excal-test--with-preview
+   (let ((blank (excal-native-fb-create 400 300)))
+     (excal-native-fb-render blank 1.0 1.0 0.0 0.0 [] nil)
+     (should (> (excal-native-fb-mean-diff excal--fb blank) 0))
+     (should (excal-native-fb-zoom-preview excal--fb excal--fb 0.5 400.0 0.0))
+     (should (= (excal-native-fb-diff excal--fb blank) 0)))))
+
+(ert-deftest excal-test-backend-resolution ()
+  "`auto' picks `layer' on macOS frames with the module, else `tiles'."
+  (let ((excal-backend 'auto))
+    ;; Batch frames are not graphical.
+    (should (eq (excal--resolve-backend) 'tiles))
+    (cl-letf (((symbol-function 'excal--layer-frame-p) #'always))
+      (should (eq (excal--resolve-backend)
+                  (if (fboundp 'excal-native-layer-create) 'layer 'tiles)))))
+  (cl-letf (((symbol-function 'excal--layer-frame-p) #'always))
+    (dolist (choice '(canvas tiles))
+      (let ((excal-backend choice))
+        (should (eq (excal--resolve-backend) choice))))))
+
 ;;; excal-test.el ends here

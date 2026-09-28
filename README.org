@@ -34,7 +34,7 @@ make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 | === =-= =0=    | zoom in / out / reset                   |
 | =H=            | toggle 1x/2x canvas resolution          |
 | =b=            | cycle presentation backend              |
-| =B=            | benchmark panning and dragging          |
+| =B=            | benchmark pan, drag and zoom         |
 | =C-x C-s=      | save back to the .excalidraw file       |
 
 * Presentation backends
@@ -43,18 +43,26 @@ The module renders into its own offscreen framebuffer; =excal-backend=
 chooses how that reaches the screen:
 
 - =canvas= — copy every frame into one Canvas image.
-- =tiles= (default) — split the window into Canvas tiles; the module
-  diffs each tile against its last contents and only changed tiles get
+- =tiles= — split the window into Canvas tiles; the module diffs each
+  tile against its last contents and only changed tiles get
   =canvas-refresh=.  Drags also repaint only the damaged rectangle.
-- =layer= (macOS, experimental) — a CoreAnimation layer over the Emacs view
-  shows the framebuffer via IOSurface, bypassing =canvas-refresh=.  Mouse
-  events still go to Emacs.
+- =layer= (macOS) — a CoreAnimation layer over the Emacs view shows the
+  framebuffer via IOSurface, bypassing =canvas-refresh=.  Mouse events
+  still go to Emacs.
+- =auto= (default) — =layer= on graphical macOS frames when the module
+  was built with it, =tiles= everywhere else.  An explicit choice wins.
 
 Independently of the backend, rendering only repaints what changed:
 elements outside the view are culled, drags repaint the damaged
 rectangle, and panning by whole device pixels shifts the framebuffer in
 place and paints only the newly exposed strips (sub-pixel trackpad deltas
-accumulate first).  Zooming repaints everything.
+accumulate first).  Zooming (C-wheel, pinch, === / =-=) shows a preview
+first: the module scales the pixels of the last full render about the
+anchor with bilinear filtering (about 0.5 ms at 1x, 2 ms at 2x), and a
+crisp full render follows once no zoom step came for
+=excal-zoom-preview-delay= (0.1 s; nil renders every step fully).  Steps
+more than =excal-zoom-preview-limit= (4x) away from that render render
+fully.
 
 =M-x excal-bench-backends= in an excal buffer compares them; =make bench=
 does the same in a fresh GUI Emacs and writes =bench.txt=.
@@ -63,6 +71,7 @@ does the same in a fresh GUI Emacs and writes =bench.txt=.
 
 - =src/excal-render.c= — roughjs-style strokes, hachure fills, Pango text.
 - =src/excal-module.c= — module glue, framebuffer, tile diffing.
+- =src/excal-preview.c= — zoom previews scaled from rendered pixels.
 - =src/excal-layer.m= — CoreAnimation overlay backend (macOS).
 - =excal-core.el= — module loading, shared state, document model.
 - =excal-view.el= — framebuffer, presentation backends, damage, scroll
