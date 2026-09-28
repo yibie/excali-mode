@@ -1625,6 +1625,39 @@ START-TARGET is the element under the start of the drawing, if any."
     (when end-target (excal--elbow-bind-end arrow 'end end-target))
     (excal--elbow-route-fresh arrow)))
 
+;;;; Transforming (resize and flip)
+
+(defun excal--elbow-transformed (arrow geometry map &optional rebind)
+  "Finish elbow ARROW after its points were mapped from GEOMETRY by MAP.
+GEOMETRY is the snapshot the transform started from (see
+`excal--snapshot-geometry'); MAP takes a scene point (X . Y) to its new
+place.  The fixed segments are mapped like the points, and both go to
+the router, as `resizeMultipleElements' does: an arrow without fixed
+segments is routed afresh, one with them keeps the mapped route.  With
+REBIND each end is bound to what lies under it, or unbound, as
+`bindOrUnbindLinearElements' after a flip."
+  (let* ((ox (plist-get geometry :x)) (oy (plist-get geometry :y))
+         (local (lambda (p)
+                  (let ((q (funcall map (cons (+ ox (aref p 0)) (+ oy (aref p 1))))))
+                    (excal--ep (- (car q) (excal--el-x arrow))
+                               (- (cdr q) (excal--el-y arrow))))))
+         (fixed (mapcar (lambda (s)
+                          (excal--eseg-create (excal--eseg-index s)
+                                              (funcall local (excal--eseg-start s))
+                                              (funcall local (excal--eseg-end s))))
+                        (excal--elbow-read-segments (plist-get geometry :fixed)))))
+    (when rebind
+      (dolist (end '(start end))
+        (let* ((point (excal--arrow-point arrow (excal--end-index arrow end)))
+               (target (excal--binding-candidate point (list arrow))))
+          (if target
+              (excal--elbow-bind-end arrow end target)
+            (excal--unbind-end arrow end)))))
+    (excal--elbow-update arrow
+                         (list :points (mapcar (lambda (p) (excal--ep (elt p 0) (elt p 1)))
+                                               (excal--get arrow 'points))
+                               :fixed fixed))))
+
 ;;;; Converting (arrowType)
 
 (defun excal--elbow-convert (arrow elbow)
@@ -1699,10 +1732,43 @@ INDEX is the segment's end point index; too short segments are skipped
     (cond ((funcall near (car points)) 'start)
           ((funcall near (car (last points))) 'end))))
 
+(defconst excal--elbow-hover-color "#6965db66"
+  "`highlightPoint' fill, rgba(105, 101, 219, 0.4).")
+
+(defvar-local excal--elbow-hover nil
+  "Scene point (X . Y) of the elbow handle under the pointer, or nil.")
+
+(defun excal--elbow-hover-damage (point)
+  "Return the damage of the hover highlight at scene POINT, or nil."
+  (when point
+    (let ((r (/ 10.0 excal--zoom)))
+      (excal--scene-rect-damage (list (- (car point) r) (- (cdr point) r)
+                                      (+ (car point) r) (+ (cdr point) r))))))
+
+(defun excal--elbow-track-hover (xy)
+  "Track the selected elbow arrow's handle under scene XY.
+Its ends and segment midpoints are highlighted on hover, as upstream's
+`highlightPoint'.  Return the damage of a change, or nil."
+  (let* ((arrow (excal--single-selection))
+         (point
+          (when (and xy arrow (excal--elbow-p arrow) (not (excal--get arrow 'locked)))
+            ;; The same precedence as `excal--elbow-mouse-down'.
+            (let ((index (excal--elbow-midpoint-at arrow xy))
+                  (end (excal--elbow-end-at arrow xy))
+                  (points (excal--elbow-scene-points arrow)))
+              (cond (index (cdr (assq index (excal--elbow-midpoints arrow))))
+                    ((eq end 'start) (car points))
+                    (end (car (last points))))))))
+    (unless (equal point excal--elbow-hover)
+      (prog1 (excal--damage-union (excal--elbow-hover-damage excal--elbow-hover)
+                                  (excal--elbow-hover-damage point))
+        (setq excal--elbow-hover point)))))
+
 (defun excal--elbow-overlays (arrow)
   "Return the handle overlays of the selected elbow ARROW.
 Only the end points get handles; each segment shows its midpoint, drawn
-as a normal point when the segment is fixed and as a phantom otherwise."
+as a normal point when the segment is fixed and as a phantom otherwise.
+The handle under the pointer gets the hover highlight."
   (let* ((diameter (/ (float excal--point-handle-size) excal--zoom))
          (mid (/ 10.0 excal--zoom))
          (fixed (excal--elbow-fixed-indices arrow))
@@ -1718,7 +1784,13 @@ as a normal point when the segment is fixed and as a phantom otherwise."
      (mapcar (lambda (p)
                (excal--ov "ov-circle" (- (car p) (/ diameter 2)) (- (cdr p) (/ diameter 2))
                           diameter diameter :stroke "#5e5ad8" :fill "#ffffffe6"))
-             (list (car points) (car (last points)))))))
+             (list (car points) (car (last points))))
+     (when-let* ((hover excal--elbow-hover)
+                 ((or (member hover (list (car points) (car (last points))))
+                      (rassoc hover (excal--elbow-midpoints arrow)))))
+       (let ((r (/ 10.0 excal--zoom)))
+         (list (excal--ov "ov-circle" (- (car hover) r) (- (cdr hover) r) (* 2 r) (* 2 r)
+                          :fill excal--elbow-hover-color)))))))
 
 ;;;; Editing: fixed segments
 
@@ -1814,6 +1886,8 @@ and rebinds; return non-nil if the press was handled."
               ((excal--elbow-p arrow)))
     (let ((index (excal--elbow-midpoint-at arrow start))
           (end (excal--elbow-end-at arrow start)))
+      ;; No hover highlight while dragging.
+      (setq excal--elbow-hover nil)
       (cond (index (excal--elbow-drag-segment arrow index) t)
             (end (excal--elbow-drag-end arrow end start) t)))))
 

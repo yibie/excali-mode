@@ -445,5 +445,156 @@ only the part between its fixed neighbours."
      (excal-edit-linear t)
      (should-not excal--editing-linear))))
 
+;;;; Restore
+
+(ert-deftest excal-elbow-test-restore-reroutes-invalid-unbound ()
+  "An unbound elbow arrow with a diagonal segment is routed on load,
+keeping its ends and its version (restoreElements)."
+  (excal-elbow-test--with-scene
+   (let* ((raw `((id . "elbow") (type . "arrow") (x . 10) (y . 20)
+                 (width . 100) (height . 50) (points . [[0 0] [100 50]])
+                 (elbowed . t) (startBinding . :null) (endBinding . :null)
+                 (index . "a0") (version . 7) (versionNonce . 42) (updated . 1)))
+          (arrow (car (excal--restore-elements (list raw) :repair-bindings t))))
+     (should (excal-elbow-test--orthogonal-p arrow))
+     (should (> (length (excal--get arrow 'points)) 2))
+     (let ((points (excal-elbow-test--scene-points arrow)))
+       (should (excal-elbow-test--near (car points) '(10.0 20.0)))
+       (should (excal-elbow-test--near (car (last points)) '(110.0 70.0))))
+     (should (= (excal--get arrow 'version) 7))
+     (should (= (excal--get arrow 'versionNonce) 42)))))
+
+(ert-deftest excal-elbow-test-restore-keeps-valid-and-bound ()
+  "Orthogonal or bound elbow arrows load untouched."
+  (excal-elbow-test--with-scene
+   (let* ((box `((id . "box") (type . "rectangle") (x . 200) (y . 0)
+                 (width . 100) (height . 100)
+                 (boundElements . [((id . "bound") (type . "arrow"))])))
+          (valid `((id . "valid") (type . "arrow") (x . 0) (y . 0)
+                   (points . [[0 0] [50 0] [50 40]]) (elbowed . t)))
+          (bound `((id . "bound") (type . "arrow") (x . 0) (y . 0)
+                   (points . [[0 0] [194 50]]) (elbowed . t)
+                   (endBinding . ((elementId . "box") (fixedPoint . [-0.06 0.5])
+                                  (mode . "orbit")))))
+          (restored (excal--restore-elements (list box valid bound) :repair-bindings t)))
+     (should (equal (excal--get (nth 1 restored) 'points) [[0 0] [50 0] [50 40]]))
+     (should (equal (excal--get (nth 2 restored) 'points) [[0 0] [194 50]])))))
+
+;;;; Resize and flip
+
+(ert-deftest excal-elbow-test-multi-resize-scales-fixed-segments ()
+  "Resizing with other elements scales the fixed segments with the points."
+  (excal-elbow-test--with-scene
+   (let ((a (excal-elbow-test--arrow 0 0 (list [0 0] [100 90])))
+         (r (excal-elbow-test--box 200 0)))
+     (setq excal--elements (list a r))
+     (excal--elbow-route-fresh a)
+     (excal--elbow-move-fixed-segment a 2 70 45)
+     (let ((geometries (mapcar (lambda (e) (cons e (excal--snapshot-geometry e))) (list a r))))
+       ;; Drag the east edge from 300 to 600: x doubles, y stays.
+       (excal--resize-multiple geometries '(0.0 0.0 300.0 100.0) 'e '(600.0 . 50.0))
+       (should (equal (excal-elbow-test--scene-points a)
+                      '((0.0 0.0) (140.0 0.0) (140.0 90.0) (200.0 90.0))))
+       (let ((seg (aref (excal--get a 'fixedSegments) 0)))
+         (should (equal (alist-get 'start seg) [140.0 0.0]))
+         (should (equal (alist-get 'end seg) [140.0 90.0]))
+         (should (= (alist-get 'index seg) 2)))
+       ;; Dragging further maps from the start, not from the last step.
+       (excal--resize-multiple geometries '(0.0 0.0 300.0 100.0) 'e '(300.0 . 50.0))
+       (should (equal (alist-get 'start (aref (excal--get a 'fixedSegments) 0))
+                      [70.0 0.0]))))))
+
+(ert-deftest excal-elbow-test-multi-resize-reroutes-bound ()
+  "Without fixed segments a resized bound elbow arrow is routed again.
+Fixed points are ratios of the shape, so the 6px gap doubles too."
+  (excal-elbow-test--with-scene
+   (let* ((a (excal-elbow-test--box 0 0))
+          (b (excal-elbow-test--box 300 0))
+          (arrow (excal-elbow-test--arrow 106 50 (list [0 0] [188 0]))))
+     (setq excal--elements (list a b arrow))
+     (excal--elbow-bind-end arrow 'start a)
+     (excal--elbow-bind-end arrow 'end b)
+     (excal--elbow-route-fresh arrow)
+     (let ((geometries (mapcar (lambda (e) (cons e (excal--snapshot-geometry e)))
+                               (list a b arrow))))
+       (excal--resize-multiple geometries '(0.0 0.0 400.0 100.0) 'e '(800.0 . 50.0))
+       (let ((points (excal-elbow-test--scene-points arrow)))
+         (should (excal-elbow-test--orthogonal-p arrow))
+         (should (excal-elbow-test--near (car points) '(212.0 50.01) 0.1))
+         (should (excal-elbow-test--near (car (last points)) '(588.0 50.01) 0.1)))))))
+
+(ert-deftest excal-elbow-test-flip-mirrors-fixed-segments ()
+  "Flipping mirrors the fixed segments with the points."
+  (excal-elbow-test--in-window
+   (let ((a (excal-elbow-test--arrow 0 0 (list [0 0] [100 90]))))
+     (setq excal--elements (list a))
+     (excal--elbow-route-fresh a)
+     (excal--elbow-move-fixed-segment a 2 70 45)
+     (excal--select (list a))
+     (excal-flip-horizontal)
+     (should (excal-elbow-test--near (excal-elbow-test--scene-points a)
+                                     '((100.0 0.0) (30.0 0.0) (30.0 90.0) (0.0 90.0))))
+     (let ((seg (aref (excal--get a 'fixedSegments) 0)))
+       (should (excal-elbow-test--near (append (alist-get 'start seg) nil) '(-70.0 0.0)))
+       (should (excal-elbow-test--near (append (alist-get 'end seg) nil) '(-70.0 90.0)))))))
+
+(ert-deftest excal-elbow-test-flip-rebinds-mirrored-ends ()
+  "Flipping shapes with their arrow keeps it bound at mirrored fixed points."
+  (excal-elbow-test--in-window
+   (let* ((a (excal-elbow-test--box 0 0))
+          (b (excal-elbow-test--box 300 200))
+          (arrow (excal-elbow-test--arrow 106 50 (list [0 0] [188 200]))))
+     (setq excal--elements (list a b arrow))
+     (excal--elbow-bind-end arrow 'start a)
+     (excal--elbow-bind-end arrow 'end b)
+     (excal--elbow-route-fresh arrow)
+     (excal--select (list a b arrow))
+     (excal-flip-horizontal)
+     (should (= (excal--get a 'x) 300.0))
+     (should (= (excal--get b 'x) 0.0))
+     (let ((points (excal-elbow-test--scene-points arrow))
+           (start (excal--get arrow 'startBinding))
+           (end (excal--get arrow 'endBinding)))
+       (should (equal (alist-get 'elementId start) (excal--get a 'id)))
+       (should (equal (alist-get 'elementId end) (excal--get b 'id)))
+       (should (< (aref (alist-get 'fixedPoint start) 0) 0.5))
+       (should (> (aref (alist-get 'fixedPoint end) 0) 0.5))
+       (should (excal-elbow-test--orthogonal-p arrow))
+       (should (excal-elbow-test--near (car points) '(294.0 50.0) 0.1))
+       (should (excal-elbow-test--near (car (last points)) '(106.0 250.0) 0.1))
+       ;; Moving a shape afterwards keeps the arrow on the mirrored side.
+       (excal--put a 'y 10.0)
+       (excal--follow (list a))
+       (should (excal-elbow-test--near (car (excal-elbow-test--scene-points arrow))
+                                       '(294.0 60.0) 0.1))))))
+
+;;;; Hover
+
+(ert-deftest excal-elbow-test-hover-highlight ()
+  "Hovering a handle of the selected elbow arrow highlights it."
+  (excal-elbow-test--in-window
+   (let ((arrow (excal-elbow-test--arrow 10 10 (list [0 0] [100 90]))))
+     (setq excal--elements (list arrow) excal--elbow-hover nil)
+     (excal--elbow-route-fresh arrow)
+     (excal--select (list arrow))
+     (let ((mid (cdar (excal--elbow-midpoints arrow))))
+       (should (excal--elbow-track-hover mid))
+       (should (equal excal--elbow-hover mid))
+       (should-not (excal--elbow-track-hover mid))
+       (should (= (length (excal--elbow-overlays arrow)) 6))
+       (should (member excal--elbow-hover-color
+                       (mapcar (lambda (ov) (aref ov 7))
+                               (excal--elbow-overlays arrow)))))
+     ;; The end point.
+     (excal--elbow-track-hover '(10.0 . 10.0))
+     (should (equal excal--elbow-hover '(10.0 . 10.0)))
+     ;; Away from every handle.
+     (should (excal--elbow-track-hover '(500.0 . 500.0)))
+     (should-not excal--elbow-hover)
+     (should (= (length (excal--elbow-overlays arrow)) 5))
+     ;; Unselected arrows get none.
+     (excal--deselect)
+     (should-not (excal--elbow-track-hover (cdar (excal--elbow-midpoints arrow)))))))
+
 (provide 'excal-elbow-test)
 ;;; excal-elbow-test.el ends here

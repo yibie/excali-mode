@@ -89,6 +89,8 @@ cache nor the canvas pixels."
       (let ((xy (excal--event-scene-xy event)))
         (when excal--multi-element
           (excal--multi-move xy))
+        (when-let* ((damage (excal--elbow-track-hover xy)))
+          (excal--render damage))
         (excal--set-pointer (excal--pointer-at xy))))))
 
 ;;;; Dragging

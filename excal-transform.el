@@ -21,6 +21,9 @@
 (require 'excal-handles)
 (require 'excal-text)
 
+(declare-function excal--elbow-p "excal-elbow")
+(declare-function excal--elbow-transformed "excal-elbow")
+
 (defconst excal--shift-locking-angle (/ float-pi 12)
   "SHIFT_LOCKING_ANGLE: rotation snaps to multiples of this with shift.")
 
@@ -31,6 +34,7 @@
         :x (excal--get element 'x) :y (excal--get element 'y)
         :width (excal--get element 'width) :height (excal--get element 'height)
         :points (mapcar #'copy-sequence (excal--get element 'points))
+        :fixed (copy-tree (excal--get element 'fixedSegments) t)
         :font-size (excal--get element 'fontSize)))
 
 (defun excal--normalize-angle (angle)
@@ -203,7 +207,8 @@ or grouped.  FROM-CENTER scales about the box center."
                (w (- x2 x1)) (h (- y2 y1))
                (sx (if (> w 0) (/ (- tx2 tx1) w) 1.0))
                (sy (if (> h 0) (/ (- ty2 ty1) h) 1.0))
-               (map (excal--box-map box to)))
+               (map (excal--box-map box to))
+               (elbows nil))
     (pcase-dolist (`(,element . ,geometry) geometries)
       (let* ((ebox (plist-get geometry :box))
              (angle (plist-get geometry :angle))
@@ -223,12 +228,15 @@ or grouped.  FROM-CENTER scales about the box center."
               (excal--touch element))
           ;; Scale the unrotated geometry about its own center, then move
           ;; the center; mirrored rotated elements negate their angle.
-          (excal--place element geometry
-                        (lambda (p)
-                          (cons (+ (car new-center) (* (- (car p) (car center)) sx))
-                                (+ (cdr new-center) (* (- (cdr p) (cdr center)) sy))))
-                        '(0 . 0)
-                        (if flipped (- angle) angle)))))))
+          (let ((map (lambda (p)
+                       (cons (+ (car new-center) (* (- (car p) (car center)) sx))
+                             (+ (cdr new-center) (* (- (cdr p) (cdr center)) sy))))))
+            (excal--place element geometry map '(0 . 0) (if flipped (- angle) angle))
+            (when (excal--elbow-p element)
+              (push (list element geometry map) elbows))))))
+    ;; Elbow arrows route once every shape is in place.
+    (pcase-dolist (`(,arrow ,geometry ,map) (nreverse elbows))
+      (excal--elbow-transformed arrow geometry map))))
 
 ;;;; Rotation
 
