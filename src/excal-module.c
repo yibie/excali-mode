@@ -1,12 +1,15 @@
 /* excal-module.c --- Emacs module glue for excal.el  -*- c-file-style: "linux" -*- */
 
 #include <emacs-module.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "excal-preview.h"
 #include "excal-render.h"
 #include "excal-text.h"
+#include "excal-rough.h"
+#include "excal-shape.h"
 #ifdef EXCAL_HAVE_LAYER
 #include "excal-layer.h"
 #endif
@@ -92,13 +95,13 @@ static emacs_value get_extra(emacs_env *env, emacs_value extras,
 	return Qnil;
 }
 
-__attribute__((unused)) static double get_extra_number(emacs_env *env, emacs_value extras,
+static double get_extra_number(emacs_env *env, emacs_value extras,
                                       const char *key, double fallback)
 {
 	return get_number(env, get_extra(env, extras, key), fallback);
 }
 
-__attribute__((unused)) static char *get_extra_string(emacs_env *env, emacs_value extras,
+static char *get_extra_string(emacs_env *env, emacs_value extras,
                                      const char *key)
 {
 	return get_string(env, get_extra(env, extras, key));
@@ -154,6 +157,34 @@ static void free_element(ExcalElement *e)
 	free(e->text_align);
 	free(e->start_arrowhead);
 	free(e->end_arrowhead);
+	free(e->pressures);
+}
+
+/* Shape extras from `excal--native-shape-extras'.  */
+static void read_shape_extras(emacs_env *env, emacs_value extras,
+                              ExcalElement *e)
+{
+	e->roundness_type = (int)get_extra_number(env, extras, "roundnessType", 0);
+	e->roundness_value =
+	        get_extra_number(env, extras, "roundnessValue", NAN);
+	e->elbowed = env->is_not_nil(env, get_extra(env, extras, "elbowed"));
+	e->simulate_pressure =
+	        (int)get_extra_number(env, extras, "simulatePressure", -1);
+	char *variability = get_extra_string(env, extras, "strokeVariability");
+	e->constant_width = variability && strcmp(variability, "constant") == 0;
+	free(variability);
+	e->streamline = get_extra_number(env, extras, "streamline", 0.5);
+	emacs_value pressures = get_extra(env, extras, "pressures");
+	if (type_is(env, pressures, Qvector)) {
+		ptrdiff_t n = env->vec_size(env, pressures);
+		e->pressures = malloc(sizeof(double) * (n ? n : 1));
+		if (e->pressures) {
+			e->pressure_count = (size_t)n;
+			for (ptrdiff_t i = 0; i < n; ++i)
+				e->pressures[i] = get_number(
+				        env, env->vec_get(env, pressures, i), NAN);
+		}
+	}
 }
 
 static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
@@ -175,7 +206,8 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->fill_style = get_string(env, SLOT(SLOT_FILL_STYLE));
 	e->stroke_width = get_number(env, SLOT(SLOT_STROKE_WIDTH), 2);
 	e->roughness = get_number(env, SLOT(SLOT_ROUGHNESS), 1);
-	e->seed = (int32_t)get_number(env, SLOT(SLOT_SEED), 1);
+	/* JS ToInt32, as roughjs' Math.imul sees the seed.  */
+	e->seed = (int32_t)rough_to_uint32(get_number(env, SLOT(SLOT_SEED), 1));
 	emacs_value points = SLOT(SLOT_POINTS);
 	if (type_is(env, points, Qvector)) {
 		ptrdiff_t n = env->vec_size(env, points);
@@ -196,6 +228,7 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->start_arrowhead = get_string(env, SLOT(SLOT_START_ARROWHEAD));
 	e->end_arrowhead = get_string(env, SLOT(SLOT_END_ARROWHEAD));
 	read_text_extras(env, SLOT(SLOT_TEXT_EXTRAS), e);
+	read_shape_extras(env, SLOT(SLOT_SHAPE_EXTRAS), e);
 #undef SLOT
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }
@@ -310,11 +343,12 @@ static emacs_value Fexcal_native_fb_create(emacs_env *env, ptrdiff_t nargs,
 static emacs_value Fexcal_native_fb_render(emacs_env *env, ptrdiff_t nargs,
                                            emacs_value *args, void *data)
 {
-	(void)nargs;
 	(void)data;
 	Framebuffer *fb = get_framebuffer(env, args[0]);
 	if (!fb)
 		return Qnil;
+	/* The optional BACKGROUND lives until the render is done.  */
+	char *background = nargs > 7 ? get_string(env, args[7]) : NULL;
 	ExcalView view = {
 	        .width = fb->width,
 	        .height = fb->height,
@@ -322,6 +356,7 @@ static emacs_value Fexcal_native_fb_render(emacs_env *env, ptrdiff_t nargs,
 	        .zoom = get_number(env, args[2], 1),
 	        .scroll_x = get_number(env, args[3], 0),
 	        .scroll_y = get_number(env, args[4], 0),
+	        .background_color = background,
 	};
 	/* DAMAGE is nil, [X Y W H], or a vector of such rectangles.  */
 	emacs_value damage = args[6];
@@ -352,10 +387,14 @@ static emacs_value Fexcal_native_fb_render(emacs_env *env, ptrdiff_t nargs,
 		}
 		if (overflow)
 			view.clip_count = 0; /* Too many pieces: repaint all.  */
-		else if (view.clip_count == 0)
+		else if (view.clip_count == 0) {
+			free(background);
 			return env->make_integer(env, 0); /* All offscreen.  */
+		}
 	}
-	return render_into(env, fb->pixels, &view, args[5]);
+	emacs_value drawn = render_into(env, fb->pixels, &view, args[5]);
+	free(background);
+	return drawn;
 }
 
 /* (excal-native-fb-scroll FB DX DY)
@@ -608,6 +647,133 @@ static emacs_value Fexcal_native_layer_flush(emacs_env *env, ptrdiff_t nargs,
 }
 #endif
 
+/* Shape introspection, for tests and other Elisp code.  */
+
+static emacs_value make_vector(emacs_env *env, ptrdiff_t n,
+                               const emacs_value *items)
+{
+	return env->funcall(env, env->intern(env, "vector"), n,
+	                    (emacs_value *)items);
+}
+
+static emacs_value floats_vector(emacs_env *env, const double *xs, size_t n)
+{
+	emacs_value *items = malloc(sizeof *items * (n ? n : 1));
+	if (!items)
+		return Qnil;
+	for (size_t i = 0; i < n; ++i)
+		items[i] = env->make_float(env, xs[i]);
+	emacs_value v = make_vector(env, (ptrdiff_t)n, items);
+	free(items);
+	return v;
+}
+
+static emacs_value ops_vector(emacs_env *env, const RoughOps *ops)
+{
+	emacs_value *items = malloc(sizeof *items * (ops->count ? ops->count : 1));
+	if (!items)
+		return Qnil;
+	static const char *names[] = {"move", "lineTo", "bcurveTo"};
+	for (size_t i = 0; i < ops->count; ++i) {
+		const RoughOp *op = &ops->ops[i];
+		int n = op->op == ROUGH_BCURVE_TO ? 6 : 2;
+		emacs_value parts[7];
+		parts[0] = env->make_string(env, names[op->op],
+		                            (ptrdiff_t)strlen(names[op->op]));
+		for (int k = 0; k < n; ++k)
+			parts[k + 1] = env->make_float(env, op->data[k]);
+		items[i] = make_vector(env, n + 1, parts);
+	}
+	emacs_value v = make_vector(env, (ptrdiff_t)ops->count, items);
+	free(items);
+	return v;
+}
+
+static emacs_value make_str(emacs_env *env, const char *s)
+{
+	return env->make_string(env, s, (ptrdiff_t)strlen(s));
+}
+
+/* (excal-native-element-shape ELEMENT)
+   Return [DRAWABLES OUTLINE COORDS PADDING] for the native element vector
+   ELEMENT, as generated for rendering.  DRAWABLES is a vector of
+   [SHAPE SETS FILL] where SHAPE names the roughjs generator, FILL is
+   "element", "stroke" or "canvas", and SETS is a vector of [TYPE OPS]
+   with TYPE "path", "fillPath" or "fillSketch" and OPS a vector of
+   ["move" X Y], ["lineTo" X Y] or ["bcurveTo" X1 Y1 X2 Y2 X Y].
+   OUTLINE is the freedraw outline as [QX QY EX EY ...] (quadratic
+   control and end points), COORDS is getElementAbsoluteCoords
+   [X1 Y1 X2 Y2 CX CY] in scene coordinates, and PADDING is how far
+   past its box or points the renderer assumes the element may draw
+   (for culling).  All ops are relative to the element's x, y.  */
+static emacs_value Fexcal_native_element_shape(emacs_env *env, ptrdiff_t nargs,
+                                               emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	ExcalElement e;
+	if (!read_element(env, args[0], &e)) {
+		free_element(&e);
+		return Qnil;
+	}
+	ExcalShape shape;
+	excal_shape_generate(&e, &shape);
+	static const char *shapes[] = {"line",       "rectangle", "ellipse",
+	                               "circle",     "linearPath", "curve",
+	                               "polygon",    "path"};
+	static const char *sets[] = {"path", "fillPath", "fillSketch"};
+	static const char *fills[] = {"element", "stroke", "canvas"};
+	emacs_value drawables[EXCAL_SHAPE_MAX_DRAWABLES];
+	for (int i = 0; i < shape.count; ++i) {
+		const ExcalDrawable *d = &shape.items[i];
+		emacs_value set_values[ROUGH_MAX_SETS];
+		for (int k = 0; k < d->rough.set_count; ++k) {
+			emacs_value pair[2] = {
+			        make_str(env, sets[d->rough.sets[k].type]),
+			        ops_vector(env, &d->rough.sets[k].ops)};
+			set_values[k] = make_vector(env, 2, pair);
+		}
+		emacs_value parts[3] = {
+		        make_str(env, shapes[d->rough.shape]),
+		        make_vector(env, d->rough.set_count, set_values),
+		        make_str(env, fills[d->fill_source])};
+		drawables[i] = make_vector(env, 3, parts);
+	}
+	double coords[6] = {
+	        e.x + shape.x1, e.y + shape.y1, e.x + shape.x2, e.y + shape.y2,
+	        e.x + (shape.x1 + shape.x2) / 2, e.y + (shape.y1 + shape.y2) / 2};
+	emacs_value result[4] = {
+	        make_vector(env, shape.count, drawables),
+	        floats_vector(env, shape.outline.xy, shape.outline.count * 2),
+	        floats_vector(env, coords, 6),
+	        env->make_float(env, excal_shape_padding(&e))};
+	excal_shape_free(&shape);
+	free_element(&e);
+	return make_vector(env, 4, result);
+}
+
+/* (excal-native-rough-random SEED COUNT)
+   Return the first COUNT numbers of roughjs' Random seeded with SEED.  */
+static emacs_value Fexcal_native_rough_random(emacs_env *env, ptrdiff_t nargs,
+                                              emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	RoughRandom r;
+	rough_random_init(&r, get_number(env, args[0], 0));
+	intmax_t n = env->extract_integer(env, args[1]);
+	if (n < 0 || n > 100000)
+		return Qnil;
+	double *xs = malloc(sizeof *xs * (n ? n : 1));
+	if (!xs)
+		return Qnil;
+	for (intmax_t i = 0; i < n; ++i)
+		xs[i] = rough_random_next(&r);
+	emacs_value v = floats_vector(env, xs, (size_t)n);
+	free(xs);
+	return v;
+}
+
 /* (excal-native-measure-text TEXT FONT-SIZE FONT-FAMILY LINE-HEIGHT) */
 static emacs_value Fexcal_native_measure_text(emacs_env *env, ptrdiff_t nargs,
                                               emacs_value *args, void *data)
@@ -727,6 +893,17 @@ static emacs_value Fexcal_native_write_png(emacs_env *env, ptrdiff_t nargs,
 	return ok ? Qt : Qnil;
 }
 
+static void bind_range(emacs_env *env, const char *name,
+                       emacs_value (*fn)(emacs_env *, ptrdiff_t, emacs_value *,
+                                         void *),
+                       ptrdiff_t min_arity, ptrdiff_t max_arity, const char *doc)
+{
+	emacs_value function =
+	        env->make_function(env, min_arity, max_arity, fn, doc, NULL);
+	env->funcall(env, env->intern(env, "defalias"), 2,
+	             (emacs_value[]){env->intern(env, name), function});
+}
+
 static void bind(emacs_env *env, const char *name,
                  emacs_value (*fn)(emacs_env *, ptrdiff_t, emacs_value *,
                                    void *),
@@ -758,6 +935,14 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "Render ELEMENTS into CANVAS.\n\n"
 	     "(fn CANVAS WIDTH HEIGHT PIXEL-SCALE ZOOM SCROLL-X SCROLL-Y "
 	     "ELEMENTS)");
+	bind(env, "excal-native-element-shape", Fexcal_native_element_shape, 1,
+	     "Return the generated shape of the native element vector ELEMENT.\n\n"
+	     "The result is [DRAWABLES OUTLINE COORDS PADDING]; see\n"
+	     "excal-module.c.\n\n"
+	     "(fn ELEMENT)");
+	bind(env, "excal-native-rough-random", Fexcal_native_rough_random, 2,
+	     "Return the first COUNT numbers of roughjs' Random for SEED.\n\n"
+	     "(fn SEED COUNT)");
 	bind(env, "excal-native-measure-text", Fexcal_native_measure_text, 4,
 	     "Return (WIDTH . HEIGHT) of TEXT in scene units.\n\n"
 	     "(fn TEXT FONT-SIZE FONT-FAMILY LINE-HEIGHT)");
@@ -786,12 +971,13 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excal-native-fb-create", Fexcal_native_fb_create, 2,
 	     "Return a WIDTH by HEIGHT offscreen framebuffer.\n\n"
 	     "(fn WIDTH HEIGHT)");
-	bind(env, "excal-native-fb-render", Fexcal_native_fb_render, 7,
+	bind_range(env, "excal-native-fb-render", Fexcal_native_fb_render, 7, 8,
 	     "Render ELEMENTS into FB, repainting only DAMAGE if non-nil.\n\n"
+	     "BACKGROUND, a \"#rrggbb\" string, is the canvas color (white).\n"
 	     "DAMAGE is a vector [X Y WIDTH HEIGHT] in device pixels, or a\n"
 	     "vector of such vectors.\n"
 	     "Return the number of elements drawn.\n\n"
-	     "(fn FB PIXEL-SCALE ZOOM SCROLL-X SCROLL-Y ELEMENTS DAMAGE)");
+	     "(fn FB PIXEL-SCALE ZOOM SCROLL-X SCROLL-Y ELEMENTS DAMAGE &optional BACKGROUND)");
 	bind(env, "excal-native-fb-scroll", Fexcal_native_fb_scroll, 3,
 	     "Shift FB's pixels by DX, DY device pixels.\n\n"
 	     "Pixels shifted in keep stale contents and must be repainted.\n\n"

@@ -29,8 +29,10 @@ ifeq ($(EMACS_MODULE_INCLUDE),)
 $(error emacs-module.h not found; set EMACS_MODULE_INCLUDE=/path/to/include)
 endif
 
-SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c src/excal-preview.c
-HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h src/excal-preview.h
+SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c \
+	src/excal-preview.c src/excal-rough.c src/excal-shape.c src/excal-freehand.c
+HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h \
+	src/excal-preview.h src/excal-rough.h src/excal-shape.h src/excal-freehand.h
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))
 PACKAGES := cairo pangocairo
 
@@ -44,6 +46,8 @@ endif
 CPPFLAGS += -I$(EMACS_MODULE_INCLUDE) $(shell $(PKG_CONFIG) --cflags $(PACKAGES))
 CFLAGS ?= -O2 -g
 CFLAGS += -std=c11 -Wall -Wextra -Wno-unused-parameter
+# The roughjs port must round like JS: no fused multiply-add.
+CFLAGS += -ffp-contract=off
 LDFLAGS += -shared
 LDLIBS += $(shell $(PKG_CONFIG) --libs $(PACKAGES)) -lm
 
