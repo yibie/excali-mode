@@ -112,8 +112,8 @@ static ExcalType parse_type(const char *name)
 	        {"rectangle", EXCAL_RECTANGLE}, {"ellipse", EXCAL_ELLIPSE},
 	        {"diamond", EXCAL_DIAMOND},     {"line", EXCAL_LINE},
 	        {"arrow", EXCAL_ARROW},         {"freedraw", EXCAL_FREEDRAW},
-	        {"text", EXCAL_TEXT},           {"selection", EXCAL_SELECTION},
-	        {"marquee", EXCAL_MARQUEE},
+	        {"text", EXCAL_TEXT},           {"ov-rect", EXCAL_OV_RECT},
+	        {"ov-handle", EXCAL_OV_HANDLE}, {"ov-circle", EXCAL_OV_CIRCLE},
 	};
 	if (name)
 		for (size_t i = 0; i < sizeof table / sizeof table[0]; ++i)
@@ -167,7 +167,6 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->text = get_string(env, SLOT(SLOT_TEXT));
 	e->font_size = get_number(env, SLOT(SLOT_FONT_SIZE), 20);
 	e->opacity = get_number(env, SLOT(SLOT_OPACITY), 100);
-	e->selection = (int)get_number(env, SLOT(SLOT_SELECTED), 0);
 	e->stroke_style = get_string(env, SLOT(SLOT_STROKE_STYLE));
 	e->font_family = (int)get_number(env, SLOT(SLOT_FONT_FAMILY), 5);
 	e->text_align = get_string(env, SLOT(SLOT_TEXT_ALIGN));

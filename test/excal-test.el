@@ -131,60 +131,6 @@
            excal--zoom 1.0)
      ,@body))
 
-(ert-deftest excal-test-resize-rectangle ()
-  "Dragging the south-east handle grows the box; the north-west can flip it."
-  (excal-test--with-scene
-   (let* ((rect (excal--make-element "rectangle" 10 20
-                                     (cons 'width 100.0) (cons 'height 50.0)))
-          (geometry (excal--geometry rect)))
-     (should (= (length (excal--handles rect)) 8))
-     ;; The se handle sits 6 px outside the corner.
-     (setq excal--elements (list rect) excal--selection (list rect))
-     (should (eq (excal--hit-handle '(116.0 . 76.0)) 'se))
-     (excal--resize rect 'se geometry 30 10)
-     (should (equal (list (excal--get rect 'x) (excal--get rect 'y)
-                          (excal--get rect 'width) (excal--get rect 'height))
-                    '(10.0 20.0 130.0 60.0)))
-     ;; Drag nw past the opposite corner: the box flips and stays positive.
-     (excal--resize rect 'nw geometry 150 80)
-     (should (equal (list (excal--get rect 'x) (excal--get rect 'y)
-                          (excal--get rect 'width) (excal--get rect 'height))
-                    '(110.0 70.0 50.0 30.0))))))
-
-(ert-deftest excal-test-resize-arrow-scales-points ()
-  "Resizing a multi-point arrow scales every point."
-  (excal-test--with-scene
-   (let* ((arrow (excal--make-element "arrow" 0 0
-                                      (cons 'points (vector [0.0 0.0] [50.0 25.0]
-                                                            [100.0 0.0]))))
-          (geometry (excal--geometry arrow)))
-     (excal--linear-extent arrow)
-     (setq geometry (excal--geometry arrow))
-     (excal--resize arrow 'e geometry 100 0)
-     (should (equal (excal--get arrow 'points)
-                    [[0.0 0.0] [100.0 25.0] [200.0 0.0]]))
-     (should (= (excal--get arrow 'width) 200.0)))))
-
-(ert-deftest excal-test-resize-text-scales-font ()
-  "Corner-resizing text scales its font, anchored at the opposite corner."
-  (excal-test--with-scene
-   (let ((text (excal--make-element "text" 0 0 (cons 'fontSize 20)
-                                    (cons 'fontFamily 5) (cons 'lineHeight 1.25))))
-     (excal--set-text text "Hello")
-     (should (= (length (excal--handles text)) 4))
-     (let ((geometry (excal--geometry text)))
-       (excal--resize text 'se geometry 0 25)
-       (should (= (excal--get text 'fontSize) 40.0))
-       (should (= (excal--get text 'height) 50.0))
-       (should (= (excal--get text 'x) 0.0))))))
-
-(ert-deftest excal-test-rotated-has-no-handles ()
-  "Rotated elements are not resizable yet."
-  (excal-test--with-scene
-   (should-not (excal--handles
-                (excal--make-element "rectangle" 0 0 (cons 'width 10.0)
-                                     (cons 'height 10.0) (cons 'angle 0.3))))))
-
 ;; Pointer shape
 
 (ert-deftest excal-test-pointer-follows-scene ()
@@ -328,32 +274,6 @@
     ;; The marquee covers c but only half of its group.
     (should (equal (excal--marquee-selection '(-1 -1 55 11)) (list a b)))
     (should (equal (excal--marquee-selection '(-1 -1 95 11)) (list a b c d)))))
-
-(ert-deftest excal-test-selection-flags ()
-  "A lone selection gets handles; a multi-selection gets one overall box."
-  (excal-test--with-elements
-      ((a (excal-test--rect 0 0)) (b (excal-test--rect 20 0)))
-    (excal--select (list a))
-    (should (= (excal--selection-flag a) 2))
-    (should (= (length (excal--overlay-natives)) 0))
-    (excal--select (list b) t)
-    (should (= (excal--selection-flag a) 1))
-    (should (equal (mapcar (lambda (v) (aref v 0)) (excal--overlay-natives))
-                   '("selection")))
-    (should (= (length (excal--selection-handles)) 8))))
-
-(ert-deftest excal-test-multi-resize ()
-  "Resizing a multi-selection scales every element within the box."
-  (excal-test--with-elements
-      ((a (excal-test--rect 0 0)) (b (excal-test--rect 30 30)))
-    (excal--select (list a b))
-    (let ((geometries (mapcar (lambda (e) (cons e (excal--geometry e)))
-                              excal--selection)))
-      (excal--resize-selection 'se geometries (excal--selection-bounds) 40 40))
-    (should (equal (list (excal--get b 'x) (excal--get b 'y)
-                         (excal--get b 'width))
-                   '(60.0 60.0 20.0)))
-    (should (equal (excal--get a 'width) 20.0))))
 
 (ert-deftest excal-test-undo-redo ()
   "Commands commit once per change; undo and redo restore scenes."
@@ -761,4 +681,5 @@ MODIFIERS, such as (shift), are added to the press event."
                              (excal--make-element "diamond" 0 0)))
                  :null)))))
 
+(provide 'excal-test)
 ;;; excal-test.el ends here

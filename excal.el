@@ -15,6 +15,8 @@
 (require 'excal-core)
 (require 'excal-view)
 (require 'excal-select)
+(require 'excal-handles)
+(require 'excal-transform)
 (require 'excal-style)
 (require 'excal-edit)
 (require 'excal-history)
@@ -32,6 +34,8 @@
 (defvar-keymap excal-mode-map
   "<down-mouse-1>" #'excal-mouse-down
   "S-<down-mouse-1>" #'excal-mouse-down
+  "M-<down-mouse-1>" #'excal-mouse-down
+  "M-S-<down-mouse-1>" #'excal-mouse-down
   "<double-down-mouse-1>" #'excal-double-click
   "<down-mouse-2>" #'excal-mouse-pan
   "<mouse-movement>" #'excal-mouse-move

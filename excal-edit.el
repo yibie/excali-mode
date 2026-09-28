@@ -12,6 +12,8 @@
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)
+(require 'excal-handles)
+(require 'excal-transform)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -33,45 +35,6 @@
                     (and (<= (- x1 tolerance) (car scene-xy) (+ x2 tolerance))
                          (<= (- y1 tolerance) (cdr scene-xy) (+ y2 tolerance)))))
                 (reverse (excal--live-elements)))))
-
-(defun excal--rotated-p (element)
-  "Return non-nil if ELEMENT is rotated."
-  (let ((angle (excal--get element 'angle)))
-    (and (numberp angle) (/= angle 0))))
-
-(defun excal--box-handles (bounds &optional corners-only)
-  "Return resize handles around BOUNDS as ((NAME . (X . Y)) ...).
-With CORNERS-ONLY, return just the four corners.  Keep the layout in sync
-with `draw_selection' in excal-render.c."
-  (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) bounds)
-               (pad (/ 6.0 excal--zoom))
-               (l (- x1 pad)) (tp (- y1 pad)) (r (+ x2 pad)) (b (+ y2 pad))
-               (mx (/ (+ l r) 2.0)) (my (/ (+ tp b) 2.0))
-               (all `((nw ,l . ,tp) (ne ,r . ,tp) (sw ,l . ,b) (se ,r . ,b)
-                      (n ,mx . ,tp) (s ,mx . ,b) (w ,l . ,my) (e ,r . ,my))))
-    (if corners-only (seq-take all 4) all)))
-
-(defun excal--handles (element)
-  "Return ELEMENT's resize handles, or nil if it cannot be resized."
-  (unless (excal--rotated-p element)
-    (excal--box-handles (excal--bounds element)
-                        (equal (excal--get element 'type) "text"))))
-
-(defun excal--selection-handles ()
-  "Return the resize handles of the selection."
-  (if-let* ((single (excal--single-selection)))
-      (excal--handles single)
-    (when (and excal--selection
-               (not (seq-some #'excal--rotated-p excal--selection)))
-      (excal--box-handles (excal--selection-bounds)))))
-
-(defun excal--hit-handle (scene-xy)
-  "Return the name of the selection handle under SCENE-XY, or nil."
-  (let ((radius (/ 8.0 excal--zoom)))
-    (car (cl-find-if (lambda (handle)
-                       (and (<= (abs (- (cadr handle) (car scene-xy))) radius)
-                            (<= (abs (- (cddr handle) (cdr scene-xy))) radius)))
-                     (excal--selection-handles)))))
 
 (defun excal--in-selection-box-p (scene-xy)
   "Return non-nil if SCENE-XY lies inside the drawn selection box.
@@ -107,102 +70,18 @@ The box is the selection bounds padded like `draw_selection'."
        ,@body
        (excal--damage-union ,before (excal--elements-damage ,els)))))
 
-;;;; Resizing
-
-(defun excal--geometry (element)
-  "Snapshot ELEMENT's geometry so a resize can be computed from it."
-  (list :bounds (excal--bounds element)
-        :x (excal--get element 'x) :y (excal--get element 'y)
-        :points (mapcar #'copy-sequence (excal--get element 'points))
-        :font-size (excal--get element 'fontSize)))
-
-(defun excal--dragged-bounds (bounds handle dx dy)
-  "Return BOUNDS with the edges grabbed by HANDLE moved by DX, DY."
-  (pcase-let ((`(,x1 ,y1 ,x2 ,y2) bounds))
-    (list (if (memq handle '(nw w sw)) (+ x1 dx) x1)
-          (if (memq handle '(nw n ne)) (+ y1 dy) y1)
-          (if (memq handle '(ne e se)) (+ x2 dx) x2)
-          (if (memq handle '(sw s se)) (+ y2 dy) y2))))
-
-(defun excal--map-geometry (element geometry from to)
-  "Place ELEMENT, snapshotted as GEOMETRY, by mapping rectangle FROM onto TO.
-TO may be inverted, which mirrors point-based elements."
-  (pcase-let* ((`(,fx1 ,fy1 ,fx2 ,fy2) from)
-               (`(,tx1 ,ty1 ,tx2 ,ty2) to)
-               (fw (- fx2 fx1)) (fh (- fy2 fy1))
-               (map-x (lambda (x) (if (> fw 0) (+ tx1 (* (- x fx1) (/ (- tx2 tx1) fw)))
-                                    (+ x (- tx1 fx1)))))
-               (map-y (lambda (y) (if (> fh 0) (+ ty1 (* (- y fy1) (/ (- ty2 ty1) fh)))
-                                    (+ y (- ty1 fy1)))))
-               (`(,ex1 ,ey1 ,ex2 ,ey2) (plist-get geometry :bounds)))
-    (pcase (excal--get element 'type)
-      ("text"
-       ;; Text scales its font uniformly; its top-left corner follows the map.
-       ;; An unchanged axis has scale 1, so dragging one edge still works.
-       (let* ((sx (if (> fw 0) (abs (/ (- tx2 tx1) fw)) 1.0))
-              (sy (if (> fh 0) (abs (/ (- ty2 ty1) fh)) 1.0))
-              ;; Follow whichever axis is dragged furthest.
-              (scale (max 0.05 sx sy)))
-         (excal--put element 'fontSize
-                     (max 1.0 (* scale (plist-get geometry :font-size))))
-         (excal--measure-text element)
-         (excal--put element 'x (float (min (funcall map-x ex1) (funcall map-x ex2))))
-         (excal--put element 'y (float (min (funcall map-y ey1) (funcall map-y ey2))))))
-      ((or "line" "arrow" "freedraw")
-       (let* ((ox (plist-get geometry :x)) (oy (plist-get geometry :y))
-              (points (plist-get geometry :points))
-              (fx (funcall map-x (+ ox (aref (car points) 0))))
-              (fy (funcall map-y (+ oy (aref (car points) 1)))))
-         (excal--put element 'x (float fx))
-         (excal--put element 'y (float fy))
-         (excal--put element 'points
-                     (vconcat (mapcar (lambda (p)
-                                        (vector (- (funcall map-x (+ ox (aref p 0))) fx)
-                                                (- (funcall map-y (+ oy (aref p 1))) fy)))
-                                      points)))
-         (excal--linear-extent element)))
-      (_
-       (let ((x1 (funcall map-x ex1)) (x2 (funcall map-x ex2))
-             (y1 (funcall map-y ey1)) (y2 (funcall map-y ey2)))
-         (excal--put element 'x (float (min x1 x2)))
-         (excal--put element 'y (float (min y1 y2)))
-         (excal--put element 'width (float (max 1 (abs (- x2 x1)))))
-         (excal--put element 'height (float (max 1 (abs (- y2 y1))))))))
-    (excal--touch element)))
-
-(defun excal--resize (element handle geometry dx dy)
-  "Resize a lone ELEMENT by dragging HANDLE DX, DY scene units from GEOMETRY."
-  (let* ((from (plist-get geometry :bounds))
-         (to (excal--dragged-bounds from handle dx dy)))
-    (if (equal (excal--get element 'type) "text")
-        ;; Corner-resized text keeps the opposite corner fixed.
-        (pcase-let ((`(,ox1 ,oy1 ,ox2 ,oy2) from))
-          (excal--map-geometry element geometry from to)
-          (let ((w (excal--get element 'width)) (h (excal--get element 'height)))
-            (excal--put element 'x (float (if (memq handle '(nw sw)) (- ox2 w) ox1)))
-            (excal--put element 'y (float (if (memq handle '(nw ne)) (- oy2 h) oy1)))
-            (excal--touch element)))
-      (excal--map-geometry element geometry from to))))
-
-(defun excal--resize-selection (handle geometries bounds dx dy)
-  "Resize the selection by dragging HANDLE DX, DY from its original BOUNDS.
-GEOMETRIES is an alist of (ELEMENT . GEOMETRY) snapshots."
-  (if (null (cdr geometries))
-      (excal--resize (caar geometries) handle (cdar geometries) dx dy)
-    (let ((to (excal--dragged-bounds bounds handle dx dy)))
-      (pcase-dolist (`(,element . ,geometry) geometries)
-        (excal--map-geometry element geometry bounds to)))))
-
 ;;;; Pointer shape
 
 (defun excal--pointer-at (scene-xy)
   "Return the pointer shape for SCENE-XY given the current tool.
 Emacs only offers a few portable shapes: there is no diagonal resize,
-move or crosshair pointer, so corners use `hdrag' and elements `hand'."
+rotate, move or crosshair pointer, so corners use `hdrag', and the
+rotation handle and elements `hand'."
   (pcase excal--tool
     ('select
-     (let ((handle (excal--hit-handle scene-xy)))
-       (cond ((memq handle '(n s)) 'nhdrag)
+     (let ((handle (excal--handle-at scene-xy)))
+       (cond ((eq handle 'rotation) 'hand)
+             ((memq handle '(n s)) 'nhdrag)
              (handle 'hdrag)
              ((or (excal--hit scene-xy) (excal--in-selection-box-p scene-xy))
               'hand)
@@ -292,18 +171,49 @@ Return the release event, or nil if another event ended the drag."
                       (excal--touch e))
                     elements origins)))))))
 
-(defun excal--resize-drag (handle start)
-  "Resize the selection by dragging HANDLE from scene point START."
-  (let ((geometries (mapcar (lambda (e) (cons e (excal--geometry e)))
-                            excal--selection))
-        (bounds (excal--selection-bounds)))
+(defun excal--handle-reference (target handle)
+  "Return the scene point of TARGET's box that HANDLE drags.
+That is the corner, or the middle of the edge, rotated with the box."
+  (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) (plist-get target :box))
+               (x (cond ((memq handle '(nw w sw)) x1)
+                        ((memq handle '(ne e se)) x2)
+                        (t (/ (+ x1 x2) 2.0))))
+               (y (cond ((memq handle '(nw n ne)) y1)
+                        ((memq handle '(sw s se)) y2)
+                        (t (/ (+ y1 y2) 2.0)))))
+    (excal--rotate-point (cons x y) (excal--box-center (plist-get target :box))
+                         (plist-get target :angle))))
+
+(defun excal--transform-drag (handle start &optional shift alt)
+  "Transform the selection by dragging HANDLE from scene point START.
+SHIFT keeps the aspect ratio, or snaps rotation to 15 degrees; ALT
+resizes about the center.  Like upstream, the offset between START and
+the handle's reference point is kept so the shape does not jump."
+  (let* ((target (excal--transform-target))
+         (geometries (mapcar (lambda (e) (cons e (excal--snapshot-geometry e)))
+                             excal--selection))
+         (elements (mapcar #'car geometries))
+         (box (plist-get target :box))
+         (reference (and (not (eq handle 'rotation))
+                         (excal--handle-reference target handle)))
+         (offset (if reference
+                     (cons (- (car reference) (car start)) (- (cdr reference) (cdr start)))
+                   '(0 . 0))))
     (excal--drag-loop
      (lambda (ev)
-       (let ((p (excal--event-scene-xy ev)))
-         (excal--with-elements-damage (mapcar #'car geometries)
-           (excal--resize-selection handle geometries bounds
-                                    (- (car p) (car start))
-                                    (- (cdr p) (cdr start)))))))))
+       (let* ((p (excal--event-scene-xy ev))
+              (pointer (cons (+ (car p) (car offset)) (+ (cdr p) (cdr offset)))))
+         (excal--with-elements-damage elements
+           (cond
+            ((and (eq handle 'rotation) (cdr geometries))
+             (excal--rotate-multiple geometries (excal--box-center box) start p shift))
+            ((eq handle 'rotation)
+             (excal--rotate-single (caar geometries) (cdar geometries) p shift))
+            ((cdr geometries)
+             (excal--resize-multiple geometries box handle pointer shift alt))
+            (t
+             (excal--resize-single (caar geometries) (cdar geometries)
+                                   handle pointer shift alt)))))))))
 
 (defun excal--marquee-drag (start add)
   "Select by dragging a box from scene point START.
@@ -342,9 +252,9 @@ adds to it."
          (shift (memq 'shift (event-modifiers event)))
          (sx (car start)) (sy (cdr start)))
     (pcase excal--tool
-      ((and 'select (let handle (and (not shift) (excal--hit-handle start)))
-            (guard handle))
-       (excal--resize-drag handle start))
+      ((and 'select (let handle (excal--handle-at start)) (guard handle))
+       (excal--transform-drag handle start shift
+                              (memq 'meta (event-modifiers event))))
       ('select
        (let ((hit (excal--hit start)))
          (cond

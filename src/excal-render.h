@@ -15,9 +15,11 @@ typedef enum {
 	EXCAL_ARROW,
 	EXCAL_FREEDRAW,
 	EXCAL_TEXT,
-	/* Editor overlays, drawn only in the selection pass.  */
-	EXCAL_SELECTION, /* Box with resize handles around a multi-selection.  */
-	EXCAL_MARQUEE,   /* Box-selection rectangle.  */
+	/* Editor overlays (selection UI), drawn above all elements; see
+	   excal-overlay.c.  */
+	EXCAL_OV_RECT,   /* Rotated rectangle outline, optionally filled.  */
+	EXCAL_OV_HANDLE, /* Transform handle: rounded square.  */
+	EXCAL_OV_CIRCLE, /* Rotation handle or linear point.  */
 	EXCAL_UNKNOWN,
 } ExcalType;
 
@@ -41,8 +43,6 @@ typedef struct {
 	char *end_arrowhead;
 	double line_height;
 	double opacity; /* 0..100 */
-	/* 0: not selected, 1: selection box, 2: box with resize handles.  */
-	int selection;
 	bool rounded;
 } ExcalElement;
 

@@ -127,29 +127,5 @@ The result is in z-order."
   "Return the rectangle spanned by corners X1,Y1 and X2,Y2."
   (list (min x1 x2) (min y1 y2) (max x1 x2) (max y1 y2)))
 
-;;;; Drawing
-
-(defun excal--selection-flag (element)
-  "Return how ELEMENT's selection box is drawn: 0 none, 1 box, 2 handles.
-Handles go on the element itself only when it is the whole selection;
-otherwise `excal--overlay-natives' draws one box around everything."
-  (cond ((not (excal--selected-p element)) 0)
-        ((eq element (excal--single-selection)) 2)
-        (t 1)))
-
-(defun excal--pseudo-native (type rect)
-  "Return a native element vector of overlay TYPE covering RECT."
-  (pcase-let ((`(,x1 ,y1 ,x2 ,y2) rect))
-    (vector type (float x1) (float y1) (float (- x2 x1)) (float (- y2 y1)) 0
-            nil nil nil 1 0 1 nil nil nil 100 0 nil nil nil nil nil nil nil [] [])))
-
-(defun excal--overlay-natives ()
-  "Return native vectors for the editor overlays: selection box, marquee."
-  (delq nil
-        (list (and (cdr excal--selection)
-                   (excal--pseudo-native "selection" (excal--selection-bounds)))
-              (and excal--marquee
-                   (excal--pseudo-native "marquee" excal--marquee)))))
-
 (provide 'excal-select)
 ;;; excal-select.el ends here

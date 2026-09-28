@@ -11,8 +11,7 @@
 (require 'excal-core)
 
 (declare-function excal--update-pointer "excal-edit")
-(declare-function excal--selection-flag "excal-select")
-(declare-function excal--overlay-natives "excal-select")
+(declare-function excal--overlay-natives "excal-handles")
 (declare-function excal-native-fb-copy "excal-module")
 (declare-function excal-native-fb-zoom-preview "excal-module")
 (declare-function excal-native-fb-mean-diff "excal-module")
@@ -58,7 +57,6 @@
                       (excal--native-shape-extras element)
                       (excal--native-text-extras element))
               excal--native-cache))))
-    (aset native 16 (excal--selection-flag element))
     native))
 
 (defun excal--native-shape-extras (_element)

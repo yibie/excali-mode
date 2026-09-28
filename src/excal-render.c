@@ -6,6 +6,7 @@
  */
 
 #include "excal-render.h"
+#include "excal-overlay.h"
 #include "excal-text.h"
 
 #include <cairo.h>
@@ -515,6 +516,8 @@ static void apply_stroke_style(cairo_t *cr, const ExcalElement *e)
 
 static void draw_element(cairo_t *cr, const ExcalElement *e)
 {
+	if (excal_overlay_p(e->type))
+		return;
 	Rough rough = {
 	        .rng = {.seed = e->seed ? e->seed : 1},
 	        .roughness = e->roughness,
@@ -624,63 +627,6 @@ static void element_extent(const ExcalElement *e, double *x1, double *y1,
 	*y2 = fmax(e->y, e->y + e->height);
 }
 
-/* Dashed box plus resize handles.  Keep the handle layout in sync with
-   `excal--handles'.  */
-static void draw_selection(cairo_t *cr, const ExcalElement *e, double zoom,
-                           bool with_handles)
-{
-	double pad = 6 / zoom;
-	double x1, y1, x2, y2;
-	element_extent(e, &x1, &y1, &x2, &y2);
-	double x = x1 - pad, y = y1 - pad;
-	double w = x2 - x1 + 2 * pad, h = y2 - y1 + 2 * pad;
-	cairo_save(cr);
-	if (e->angle != 0) {
-		double cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-		cairo_translate(cr, cx, cy);
-		cairo_rotate(cr, e->angle);
-		cairo_translate(cr, -cx, -cy);
-	}
-	cairo_set_source_rgb(cr, 0.41, 0.40, 0.87);
-	cairo_set_line_width(cr, 1 / zoom);
-	double dash[] = {4 / zoom, 4 / zoom};
-	cairo_set_dash(cr, dash, 2, 0);
-	cairo_rectangle(cr, x, y, w, h);
-	cairo_stroke(cr);
-	cairo_set_dash(cr, NULL, 0, 0);
-	/* Resizing rotated elements is not supported yet.  */
-	if (with_handles && e->angle == 0) {
-		double hs = 8 / zoom;
-		double hx[] = {x, x + w, x, x + w, x + w / 2, x + w / 2, x, x + w};
-		double hy[] = {y, y, y + h, y + h, y, y + h, y + h / 2, y + h / 2};
-		/* Text scales uniformly, so it only gets corner handles.  */
-		int handles = e->type == EXCAL_TEXT ? 4 : 8;
-		for (int i = 0; i < handles; ++i) {
-			cairo_rectangle(cr, hx[i] - hs / 2, hy[i] - hs / 2, hs,
-			                hs);
-			cairo_set_source_rgb(cr, 1, 1, 1);
-			cairo_fill_preserve(cr);
-			cairo_set_source_rgb(cr, 0.41, 0.40, 0.87);
-			cairo_stroke(cr);
-		}
-	}
-	cairo_restore(cr);
-}
-
-static void draw_marquee(cairo_t *cr, const ExcalElement *e, double zoom)
-{
-	double x1, y1, x2, y2;
-	element_extent(e, &x1, &y1, &x2, &y2);
-	cairo_save(cr);
-	cairo_rectangle(cr, x1, y1, x2 - x1, y2 - y1);
-	cairo_set_source_rgba(cr, 0.41, 0.40, 0.87, 0.08);
-	cairo_fill_preserve(cr);
-	cairo_set_source_rgb(cr, 0.41, 0.40, 0.87);
-	cairo_set_line_width(cr, 1 / zoom);
-	cairo_stroke(cr);
-	cairo_restore(cr);
-}
-
 /* Conservative scene-space bounds of E, including rough jitter.  */
 static void element_bounds(const ExcalElement *e, double *x1, double *y1,
                            double *x2, double *y2)
@@ -748,16 +694,10 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 			++drawn;
 		}
 	}
+	/* Editor overlays go on top of every element.  */
 	for (size_t i = 0; i < count; ++i)
-		if (!visible[i])
-			continue;
-		else if (elements[i].type == EXCAL_MARQUEE)
-			draw_marquee(cr, &elements[i], view->zoom);
-		else if (elements[i].type == EXCAL_SELECTION)
-			draw_selection(cr, &elements[i], view->zoom, true);
-		else if (elements[i].selection > 0)
-			draw_selection(cr, &elements[i], view->zoom,
-			               elements[i].selection == 2);
+		if (visible[i] && excal_overlay_p(elements[i].type))
+			excal_draw_overlay(cr, &elements[i], view->zoom);
 	free(visible);
 
 	cairo_destroy(cr);
