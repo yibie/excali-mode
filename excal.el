@@ -33,6 +33,8 @@
 (require 'excal-snap)
 (require 'excal-frame)
 (require 'excal-erase)
+(require 'excal-tools)
+(require 'excal-bucket)
 (require 'excal-library)
 (require 'excal-image)
 (require 'excal-export)
@@ -53,10 +55,6 @@
      (excal--update-pointer)
      (message "Tool: %s" excal--tool)))
 
-(defun excal-not-yet ()
-  "Report that this Excalidraw tool is not ported yet."
-  (interactive)
-  (message "%s: not available yet" (key-description (this-command-keys))))
 
 (defun excal-return ()
   "Finish drawing points, edit the selected line's points, or edit text."
@@ -83,6 +81,9 @@ or deselect."
   "S-<down-mouse-1>" #'excal-mouse-down
   "M-<down-mouse-1>" #'excal-mouse-down
   "M-S-<down-mouse-1>" #'excal-mouse-down
+  ;; Mod+Alt drags a lasso from the selection tool.
+  "C-M-<down-mouse-1>" #'excal-mouse-down
+  "M-s-<down-mouse-1>" #'excal-mouse-down
   "<double-down-mouse-1>" #'excal-double-click
   "<down-mouse-2>" #'excal-mouse-pan
   "<mouse-movement>" #'excal-mouse-move
@@ -105,7 +106,10 @@ or deselect."
   "f" (excal--tool-command frame)
   "n" (excal--tool-command stickynote)
   "9" #'excal-insert-image
-  "k" #'excal-not-yet "b" #'excal-not-yet "i" #'excal-not-yet
+  "k" (excal--tool-command laser)
+  "b" (excal--tool-command bucketfill)
+  "X" (excal--tool-command autoshape)
+  "i" #'excal-eyedropper "G" #'excal-eyedropper "S" #'excal-eyedropper-stroke
   "q" #'excal-toggle-tool-lock
   ;; Style.
   "s" #'excal-style

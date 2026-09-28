@@ -62,7 +62,7 @@ always keeps its tool and selects nothing, as upstream."
   (unless (or excal--tool-locked (equal (excal--get element 'type) "freedraw"))
     (excal--deselect)
     (excal--select (list element))
-    (setq excal--tool 'select)))
+    (setq excal--tool excal--preferred-selection-tool)))
 
 (defun excal--discard (element)
   "Remove ELEMENT, which was never finished, from the scene."
@@ -367,7 +367,7 @@ no smaller than `excal--sticky-note-min-size'."
     (excal--touch note)
     (excal--deselect)
     (excal--select (list note))
-    (unless excal--tool-locked (setq excal--tool 'select))
+    (unless excal--tool-locked (setq excal--tool excal--preferred-selection-tool))
     (excal--render)
     (when (fboundp 'excal-edit-text)
       (excal-edit-text))))
@@ -378,7 +378,7 @@ no smaller than `excal--sticky-note-min-size'."
   "Create an element with TOOL for the press EVENT at scene point START.
 With the grid on the start snaps to it, unless super is held."
   (let* ((mods (event-modifiers event))
-         (start (if (eq tool 'freedraw) start
+         (start (if (memq tool '(freedraw autoshape)) start
                   (excal--grid-point start (memq 'super mods)))))
     (pcase tool
       ((or 'rectangle 'ellipse 'diamond 'frame)
@@ -387,11 +387,12 @@ With the grid on the start snaps to it, unless super is held."
        (excal--create-linear (symbol-name tool) start (memq 'shift mods)
                              (memq 'meta mods)))
       ('freedraw (excal--create-freedraw start))
+      ('autoshape (excal--autoshape-drag start))
       ('stickynote (excal--create-sticky-note start))
       ('text
        (excal--await-release)
        (excal--insert-text (car start) (cdr start))
-       (unless excal--tool-locked (setq excal--tool 'select))))
+       (unless excal--tool-locked (setq excal--tool excal--preferred-selection-tool))))
     ;; Elements drawn inside a frame belong to it.
     (unless (eq tool 'frame)
       (when-let* ((new (car (last excal--elements)))
@@ -412,6 +413,9 @@ With the grid on the start snaps to it, unless super is held."
   (setq excal--tool-locked (not excal--tool-locked))
   (message "Tool lock %s" (if excal--tool-locked "on" "off")))
 
+(declare-function excal-bucket-cycle-color "excal-bucket")
+(declare-function excal--autoshape-drag "excal-tools")
+
 (defvar-local excal--previous-tool 'select
   "Tool to return to when a toggle tool is chosen again.")
 
@@ -419,18 +423,25 @@ With the grid on the start snaps to it, unless super is held."
   "Make TOOL current.
 Choosing the arrow tool again cycles the arrow type sharp, round,
 elbow (`currentItemArrowType'); choosing the eraser or hand again goes
-back to the previous tool."
+back to the previous tool, and the bucket fill again cycles its color.
+The selection tool is the preferred one, box or lasso."
   (when (and (eq tool 'arrow) (eq excal--tool 'arrow))
     (excal-set-style 'arrowType
                      (pcase (excal--style-value 'arrowType)
                        ("sharp" "round") ("round" "elbow") (_ "sharp")))
     (message "Arrow type: %s" (excal--style-value 'arrowType)))
+  (when (eq tool 'select)
+    (setq tool excal--preferred-selection-tool))
   (when excal--multi-element (excal-finish-multi-point))
-  (if (and (memq tool '(eraser hand)) (eq excal--tool tool))
-      (setq excal--tool excal--previous-tool)
+  (cond
+   ((and (eq tool 'bucketfill) (eq excal--tool 'bucketfill))
+    (excal-bucket-cycle-color))
+   ((and (memq tool '(eraser hand)) (eq excal--tool tool))
+    (setq excal--tool excal--previous-tool))
+   (t
     (unless (eq tool excal--tool)
       (setq excal--previous-tool excal--tool))
-    (setq excal--tool tool)))
+    (setq excal--tool tool))))
 
 (provide 'excal-create)
 ;;; excal-create.el ends here

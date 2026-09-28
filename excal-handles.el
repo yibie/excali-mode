@@ -223,7 +223,18 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
                                     (plist-get target :spacing)
                                     (not (plist-get target :rotation)))))
 
+(defvar excal--hide-editor-overlays nil
+  "Non-nil hides the selection UI, as while the eye dropper reads pixels.")
+
+(declare-function excal--tool-overlays "excal-tools")
+
 (defun excal--overlay-natives ()
+  "Return overlay pseudo-elements for the selection UI and the marquee.
+Tool overlays (laser, lasso, eye dropper) go on top."
+  (append (unless excal--hide-editor-overlays (excal--editor-overlay-natives))
+          (and (fboundp 'excal--tool-overlays) (excal--tool-overlays))))
+
+(defun excal--editor-overlay-natives ()
   "Return overlay pseudo-elements for the selection UI and the marquee."
   (let* ((groups (excal--selected-groups))
          (grouped (apply #'append (mapcar #'cdr groups)))

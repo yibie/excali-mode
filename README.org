@@ -34,6 +34,11 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =v= =1=, =h=, =r= =2=, =d= =3=, =o= =4=, =a= =5=, =l= =6=, =p= =x= =7=, =t= =8= | select, hand, rectangle, diamond, ellipse, arrow, line, pen, text |
 | =a= again | cycle sharp / round / elbow arrows |
 | =f=, =n=, =e= =0= | frame, sticky note, eraser (=e= again: previous tool) |
+| =k= | laser pointer: a fading red trail, never saved |
+| =b= | bucket fill: click inside a closed area (=b= again: next color, =M-click=: pick the color) |
+| =X= | autoshape: a freehand stroke becomes a rectangle, ellipse, diamond or line |
+| =i= =G=, =S= | eye dropper: next click picks a background, stroke (=M-click=: the other) |
+| =C-M-drag= =M-s-drag= | lasso select; =M-x excal-toggle-lasso= makes it the =v= tool |
 | =q= | lock the tool (keep drawing) |
 | drag | create; shift = square / 15° lines, meta = from center |
 | short drag with =a=/=l=, then clicks | multi-point line; click the last point, =RET= or =ESC= to finish |
@@ -149,6 +154,8 @@ No dark-mode export yet.
   placeholder drawing.
 - =src/excal-frame.c= — frame outlines, names and child clipping.
 - =src/excal-export.c= — PNG/SVG export surfaces, tEXt chunks, zlib.
+- =src/excal-fill.c= — bucket-fill region search: raster flood fill,
+  gap bridging, outline tracing with keyholed holes.
 - =excal-core.el= — module loading, shared state, document model, file
   reading and saving (JSON written like upstream's =JSON.stringify(…, null, 2)=).
 - =excal-restore.el= — restore/migration of loaded scenes (port of
@@ -171,6 +178,8 @@ No dark-mode export yet.
 - =excal-snap.el= — grid mode and object snapping.
 - =excal-frame.el= — frame membership and behavior.
 - =excal-erase.el= — eraser and element links.
+- =excal-tools.el= — laser, eye dropper, autoshape, lasso.
+- =excal-bucket.el= — bucket fill.
 - =excal-library.el= — =.excalidrawlib= library: add, insert, import,
   export, browse.
 - =excal-edit.el= — pointer, drags, mouse commands, text, grouping, z-order.

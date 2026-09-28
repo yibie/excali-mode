@@ -54,6 +54,8 @@
 (defvar-local excal--scroll-x 0.0)
 (defvar-local excal--scroll-y 0.0)
 (defvar-local excal--tool 'select)
+(defvar-local excal--preferred-selection-tool 'select
+  "The tool `v' and `1' choose: `select' or `lasso' (preferredSelectionTool).")
 (defvar-local excal--selection nil "Selected element alists, in z-order.")
 (defvar-local excal--editing-group nil
   "Group id entered by double-clicking, or nil; see `excal--unit'.")
