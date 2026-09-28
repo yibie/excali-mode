@@ -1,11 +1,12 @@
 /* excal-render.c --- Excalidraw scene rasterizer for Emacs Canvas  -*- c-file-style: "linux" -*-
  *
- * Hand-drawn strokes follow the roughjs algorithms (line bowing, ellipse
- * point jitter, Catmull-Rom curve fitting) closely enough to look like
- * Excalidraw, but they are not bit-identical to the web renderer.
+ * Shapes come from excal-shape.c, a port of Excalidraw's shape.ts on
+ * top of a roughjs port (excal-rough.c); this file turns their ops into
+ * Cairo paths the way roughjs' canvas renderer does.
  */
 
 #include "excal-render.h"
+#include "excal-shape.h"
 #include "excal-text.h"
 
 #include <cairo.h>
@@ -17,188 +18,6 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-/* Seeded PRNG matching roughjs `Random.next'.  */
-typedef struct {
-	int32_t seed;
-} Rng;
-
-static double rng_next(Rng *rng)
-{
-	rng->seed = (int32_t)((uint32_t)48271u * (uint32_t)rng->seed);
-	return (double)(rng->seed & 0x7fffffff) / 2147483648.0;
-}
-
-typedef struct {
-	Rng rng;
-	double roughness;
-	double bowing;
-	double max_offset;
-	double curve_fitting;
-} Rough;
-
-static double rough_offset(Rough *r, double min, double max, double gain)
-{
-	return r->roughness * gain * (rng_next(&r->rng) * (max - min) + min);
-}
-
-static double rough_offset_opt(Rough *r, double x, double gain)
-{
-	return rough_offset(r, -x, x, gain);
-}
-
-/* roughjs `_line'.  */
-static void rough_line_once(cairo_t *cr, Rough *r, double x1, double y1,
-                            double x2, double y2, bool overlay)
-{
-	double length_sq = (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
-	double length = sqrt(length_sq);
-	double gain = length < 200 ? 1.0
-	              : length > 500 ? 0.4
-	                             : -0.0016668 * length + 1.233334;
-	double offset = r->max_offset;
-	if (offset * offset * 100 > length_sq)
-		offset = length / 10;
-	double random = overlay ? offset / 2 : offset;
-	double diverge = 0.2 + rng_next(&r->rng) * 0.2;
-	double mid_x = r->bowing * r->max_offset * (y2 - y1) / 200;
-	double mid_y = r->bowing * r->max_offset * (x1 - x2) / 200;
-	mid_x = rough_offset_opt(r, mid_x, gain);
-	mid_y = rough_offset_opt(r, mid_y, gain);
-
-	cairo_move_to(cr, x1 + rough_offset_opt(r, random, gain),
-	              y1 + rough_offset_opt(r, random, gain));
-	double c1x = mid_x + x1 + (x2 - x1) * diverge +
-	             rough_offset_opt(r, random, gain);
-	double c1y = mid_y + y1 + (y2 - y1) * diverge +
-	             rough_offset_opt(r, random, gain);
-	double c2x = mid_x + x1 + 2 * (x2 - x1) * diverge +
-	             rough_offset_opt(r, random, gain);
-	double c2y = mid_y + y1 + 2 * (y2 - y1) * diverge +
-	             rough_offset_opt(r, random, gain);
-	double ex = x2 + rough_offset_opt(r, random, gain);
-	double ey = y2 + rough_offset_opt(r, random, gain);
-	cairo_curve_to(cr, c1x, c1y, c2x, c2y, ex, ey);
-}
-
-static void rough_line(cairo_t *cr, Rough *r, double x1, double y1, double x2,
-                       double y2, bool multi)
-{
-	if (r->roughness <= 0.0) {
-		cairo_move_to(cr, x1, y1);
-		cairo_line_to(cr, x2, y2);
-		return;
-	}
-	rough_line_once(cr, r, x1, y1, x2, y2, false);
-	if (multi)
-		rough_line_once(cr, r, x1, y1, x2, y2, true);
-}
-
-/* roughjs `_curve': Catmull-Rom through POINTS (flat xy array).  */
-static void rough_curve(cairo_t *cr, const double *p, size_t n)
-{
-	if (n < 2)
-		return;
-	if (n < 4) {
-		cairo_move_to(cr, p[0], p[1]);
-		for (size_t i = 1; i < n; ++i)
-			cairo_line_to(cr, p[2 * i], p[2 * i + 1]);
-		return;
-	}
-	const double s = 1.0; /* 1 - curveTightness */
-	cairo_move_to(cr, p[2], p[3]);
-	for (size_t i = 1; i + 2 < n; ++i) {
-		const double *prev = p + 2 * (i - 1);
-		const double *cur = p + 2 * i;
-		const double *next = p + 2 * (i + 1);
-		const double *after = p + 2 * (i + 2);
-		cairo_curve_to(cr, cur[0] + (s * next[0] - s * prev[0]) / 6,
-		               cur[1] + (s * next[1] - s * prev[1]) / 6,
-		               next[0] + (s * cur[0] - s * after[0]) / 6,
-		               next[1] + (s * cur[1] - s * after[1]) / 6, next[0],
-		               next[1]);
-	}
-}
-
-/* roughjs `_computeEllipsePoints'; returns a malloc'ed flat array.  */
-static double *ellipse_points(Rough *r, double increment, double cx, double cy,
-                              double rx, double ry, double offset,
-                              double overlap, size_t *count)
-{
-	double rad_offset = r->roughness == 0
-	                            ? 0
-	                            : rough_offset_opt(r, 0.5, 1) - M_PI / 2;
-	size_t capacity = (size_t)(2 * M_PI / increment) + 8;
-	double *pts = malloc(sizeof(double) * 2 * capacity);
-	size_t n = 0;
-#define PUSH(X, Y)                           \
-	do {                                 \
-		if (n < capacity) {          \
-			pts[2 * n] = (X);    \
-			pts[2 * n + 1] = (Y); \
-			++n;                 \
-		}                            \
-	} while (0)
-	PUSH(rough_offset_opt(r, offset, 1) + cx +
-	             0.9 * rx * cos(rad_offset - increment),
-	     rough_offset_opt(r, offset, 1) + cy +
-	             0.9 * ry * sin(rad_offset - increment));
-	double end_angle = 2 * M_PI + rad_offset - 0.01;
-	for (double a = rad_offset; a < end_angle; a += increment)
-		PUSH(rough_offset_opt(r, offset, 1) + cx + rx * cos(a),
-		     rough_offset_opt(r, offset, 1) + cy + ry * sin(a));
-	PUSH(rough_offset_opt(r, offset, 1) + cx +
-	             rx * cos(rad_offset + 2 * M_PI + overlap * 0.5),
-	     rough_offset_opt(r, offset, 1) + cy +
-	             ry * sin(rad_offset + 2 * M_PI + overlap * 0.5));
-	PUSH(rough_offset_opt(r, offset, 1) + cx +
-	             0.98 * rx * cos(rad_offset + overlap),
-	     rough_offset_opt(r, offset, 1) + cy +
-	             0.98 * ry * sin(rad_offset + overlap));
-	PUSH(rough_offset_opt(r, offset, 1) + cx +
-	             0.9 * rx * cos(rad_offset + overlap * 0.5),
-	     rough_offset_opt(r, offset, 1) + cy +
-	             0.9 * ry * sin(rad_offset + overlap * 0.5));
-#undef PUSH
-	*count = n;
-	return pts;
-}
-
-static void rough_ellipse(cairo_t *cr, Rough *r, double cx, double cy,
-                          double width, double height, bool multi)
-{
-	if (r->roughness <= 0.0) {
-		cairo_save(cr);
-		cairo_translate(cr, cx, cy);
-		cairo_scale(cr, fmax(width / 2, 0.01), fmax(height / 2, 0.01));
-		cairo_new_sub_path(cr);
-		cairo_arc(cr, 0, 0, 1, 0, 2 * M_PI);
-		cairo_restore(cr);
-		return;
-	}
-	const double curve_step_count = 9;
-	double psq = sqrt(M_PI * 2 *
-	                  sqrt((pow(width / 2, 2) + pow(height / 2, 2)) / 2));
-	double steps = ceil(fmax(curve_step_count,
-	                         (curve_step_count / sqrt(200)) * psq));
-	double increment = 2 * M_PI / steps;
-	double rx = fabs(width / 2), ry = fabs(height / 2);
-	double fit = 1 - r->curve_fitting;
-	rx += rough_offset_opt(r, rx * fit, 1);
-	ry += rough_offset_opt(r, ry * fit, 1);
-
-	size_t n;
-	double overlap = increment *
-	                 rough_offset(r, 0.1, rough_offset(r, 0.4, 1, 1), 1);
-	double *p = ellipse_points(r, increment, cx, cy, rx, ry, 1, overlap, &n);
-	rough_curve(cr, p, n);
-	free(p);
-	if (multi) {
-		p = ellipse_points(r, increment, cx, cy, rx, ry, 1.5, 0, &n);
-		rough_curve(cr, p, n);
-		free(p);
-	}
-}
 
 /* Colors.  */
 
@@ -244,293 +63,133 @@ static bool parse_color(const char *s, Rgba *out)
 	return out->a > 0;
 }
 
+
 /* Shapes.  */
 
-static void clean_shape_path(cairo_t *cr, const ExcalElement *e)
+static void ops_path(cairo_t *cr, const RoughOps *ops)
 {
-	double x = e->x, y = e->y, w = e->width, h = e->height;
 	cairo_new_path(cr);
-	switch (e->type) {
-	case EXCAL_RECTANGLE:
-		if (e->rounded) {
-			double r = fmin(fmin(fabs(w), fabs(h)) * 0.25, 32);
-			cairo_new_sub_path(cr);
-			cairo_arc(cr, x + w - r, y + r, r, -M_PI / 2, 0);
-			cairo_arc(cr, x + w - r, y + h - r, r, 0, M_PI / 2);
-			cairo_arc(cr, x + r, y + h - r, r, M_PI / 2, M_PI);
-			cairo_arc(cr, x + r, y + r, r, M_PI, 3 * M_PI / 2);
-			cairo_close_path(cr);
-		} else {
-			cairo_rectangle(cr, x, y, w, h);
-		}
-		break;
-	case EXCAL_ELLIPSE:
-		cairo_save(cr);
-		cairo_translate(cr, x + w / 2, y + h / 2);
-		cairo_scale(cr, fmax(w / 2, 0.01), fmax(h / 2, 0.01));
-		cairo_arc(cr, 0, 0, 1, 0, 2 * M_PI);
-		cairo_restore(cr);
-		break;
-	case EXCAL_DIAMOND:
-		cairo_move_to(cr, x + w / 2, y);
-		cairo_line_to(cr, x + w, y + h / 2);
-		cairo_line_to(cr, x + w / 2, y + h);
-		cairo_line_to(cr, x, y + h / 2);
-		cairo_close_path(cr);
-		break;
-	default:
-		break;
-	}
-}
-
-static void fill_shape(cairo_t *cr, Rough *r, const ExcalElement *e,
-                       const Rgba *fill)
-{
-	if (!fill)
-		return;
-	cairo_save(cr);
-	cairo_set_source_rgba(cr, fill->r, fill->g, fill->b, fill->a);
-	const char *style = e->fill_style ? e->fill_style : "hachure";
-	if (strcmp(style, "solid") == 0) {
-		clean_shape_path(cr, e);
-		cairo_fill(cr);
-		cairo_restore(cr);
-		return;
-	}
-	/* Hachure: rough parallel strokes clipped to the shape.  */
-	clean_shape_path(cr, e);
-	cairo_clip(cr);
-	cairo_new_path(cr);
-	double gap = fmax(e->stroke_width * 4, 4);
-	cairo_set_line_width(cr, fmax(e->stroke_width / 2, 0.5));
-	double cx = e->x + e->width / 2, cy = e->y + e->height / 2;
-	double radius = hypot(e->width, e->height) / 2 + gap;
-	int passes = strcmp(style, "cross-hatch") == 0 ? 2 : 1;
-	for (int pass = 0; pass < passes; ++pass) {
-		double angle = (pass == 0 ? -41.0 : 49.0) * M_PI / 180 + M_PI / 2;
-		double dx = cos(angle), dy = sin(angle);
-		for (double t = -radius; t <= radius; t += gap) {
-			double px = cx - dy * t, py = cy + dx * t;
-			rough_line(cr, r, px - dx * radius, py - dy * radius,
-			           px + dx * radius, py + dy * radius, false);
+	for (size_t i = 0; i < ops->count; ++i) {
+		const double *d = ops->ops[i].data;
+		switch (ops->ops[i].op) {
+		case ROUGH_MOVE:
+			cairo_move_to(cr, d[0], d[1]);
+			break;
+		case ROUGH_LINE_TO:
+			cairo_line_to(cr, d[0], d[1]);
+			break;
+		case ROUGH_BCURVE_TO:
+			cairo_curve_to(cr, d[0], d[1], d[2], d[3], d[4], d[5]);
+			break;
 		}
 	}
-	cairo_stroke(cr);
-	cairo_restore(cr);
 }
 
-static void stroke_rectangle(cairo_t *cr, Rough *r, const ExcalElement *e,
-                             bool multi)
+static void set_source(cairo_t *cr, const Rgba *c)
 {
-	double x = e->x, y = e->y, w = e->width, h = e->height;
-	if (!e->rounded) {
-		rough_line(cr, r, x, y, x + w, y, multi);
-		rough_line(cr, r, x + w, y, x + w, y + h, multi);
-		rough_line(cr, r, x + w, y + h, x, y + h, multi);
-		rough_line(cr, r, x, y + h, x, y, multi);
-		return;
-	}
-	double rad = fmin(fmin(fabs(w), fabs(h)) * 0.25, 32);
-	rough_line(cr, r, x + rad, y, x + w - rad, y, multi);
-	rough_line(cr, r, x + w, y + rad, x + w, y + h - rad, multi);
-	rough_line(cr, r, x + w - rad, y + h, x + rad, y + h, multi);
-	rough_line(cr, r, x, y + h - rad, x, y + rad, multi);
-	double k = 0.55;
-	double corners[4][6] = {
-	        {x + w - rad, y, x + w, y, x + w, y + rad},
-	        {x + w, y + h - rad, x + w, y + h, x + w - rad, y + h},
-	        {x + rad, y + h, x, y + h, x, y + h - rad},
-	        {x, y + rad, x, y, x + rad, y},
-	};
-	for (int i = 0; i < 4; ++i) {
-		double *c = corners[i];
-		cairo_move_to(cr, c[0], c[1]);
-		cairo_curve_to(cr, c[0] + (c[2] - c[0]) * k,
-		               c[1] + (c[3] - c[1]) * k,
-		               c[4] + (c[2] - c[4]) * k,
-		               c[5] + (c[3] - c[5]) * k, c[4], c[5]);
-	}
+	cairo_set_source_rgba(cr, c->r, c->g, c->b, c->a);
 }
 
-static void stroke_linear(cairo_t *cr, Rough *r, const ExcalElement *e,
-                          bool multi)
+/* roughjs `RoughCanvas.draw'.  STROKE and FILL are NULL when invisible.  */
+static void draw_drawable(cairo_t *cr, const ExcalDrawable *d,
+                          const Rgba *stroke, const Rgba *fill)
 {
-	size_t n = e->point_count;
-	if (n < 2)
-		return;
-	double *abs_pts = malloc(sizeof(double) * 2 * (n + 2));
-	for (size_t i = 0; i < n; ++i) {
-		abs_pts[2 * (i + 1)] = e->x + e->points[2 * i];
-		abs_pts[2 * (i + 1) + 1] = e->y + e->points[2 * i + 1];
-	}
-	if (e->rounded && n > 2) {
-		/* Duplicate the endpoints so the curve passes through them.  */
-		abs_pts[0] = abs_pts[2];
-		abs_pts[1] = abs_pts[3];
-		abs_pts[2 * (n + 1)] = abs_pts[2 * n];
-		abs_pts[2 * (n + 1) + 1] = abs_pts[2 * n + 1];
-		rough_curve(cr, abs_pts, n + 2);
-	} else {
-		for (size_t i = 1; i < n; ++i)
-			rough_line(cr, r, abs_pts[2 * i], abs_pts[2 * i + 1],
-			           abs_pts[2 * i + 2], abs_pts[2 * i + 3],
-			           multi);
-	}
-	free(abs_pts);
-}
-
-/* Draw arrowhead KIND with its tip at TX,TY, pointing away from FX,FY.
-   Sizes follow Excalidraw's getArrowheadSize/getArrowheadAngle.  */
-static void draw_arrowhead(cairo_t *cr, Rough *r, const ExcalElement *e,
-                           const char *kind, double tx, double ty, double fx,
-                           double fy, const Rgba *stroke, bool multi)
-{
-	double seg = hypot(tx - fx, ty - fy);
-	if (!kind || seg < 0.01)
-		return;
-	bool diamond = strncmp(kind, "diamond", 7) == 0;
-	bool outline = strstr(kind, "_outline") != NULL;
-	double size = strcmp(kind, "arrow") == 0 ? 25 : diamond ? 12 : 15;
-	size = fmin(size, seg * (diamond ? 0.25 : 0.5));
-	double ux = (tx - fx) / seg, uy = (ty - fy) / seg;
-	double px = -uy, py = ux; /* Perpendicular.  */
-
-	cairo_save(cr);
-	cairo_set_dash(cr, NULL, 0, 0);
-	cairo_new_path(cr);
-	if (strcmp(kind, "bar") == 0) {
-		rough_line(cr, r, tx + px * size, ty + py * size,
-		           tx - px * size, ty - py * size, multi);
-		cairo_stroke(cr);
-	} else if (strncmp(kind, "triangle", 8) == 0 ||
-	           strncmp(kind, "circle", 6) == 0 || diamond) {
-		if (strncmp(kind, "circle", 6) == 0) {
-			cairo_arc(cr, tx - ux * size / 2, ty - uy * size / 2,
-			          size / 2, 0, 2 * M_PI);
-		} else if (diamond) {
-			double bx = tx - ux * size * 2, by = ty - uy * size * 2;
-			double mx = tx - ux * size, my = ty - uy * size;
-			cairo_move_to(cr, tx, ty);
-			cairo_line_to(cr, mx + px * size / 2, my + py * size / 2);
-			cairo_line_to(cr, bx, by);
-			cairo_line_to(cr, mx - px * size / 2, my - py * size / 2);
-			cairo_close_path(cr);
-		} else {
-			double a = 25 * M_PI / 180;
-			double ca = cos(a), sa = sin(a);
-			cairo_move_to(cr, tx, ty);
-			cairo_line_to(cr, tx - size * (ux * ca - px * sa),
-			              ty - size * (uy * ca - py * sa));
-			cairo_line_to(cr, tx - size * (ux * ca + px * sa),
-			              ty - size * (uy * ca + py * sa));
-			cairo_close_path(cr);
+	const RoughOptions *o = &d->rough.options;
+	for (int i = 0; i < d->rough.set_count; ++i) {
+		const RoughSet *set = &d->rough.sets[i];
+		switch (set->type) {
+		case ROUGH_SET_PATH:
+			if (!stroke)
+				break;
+			ops_path(cr, &set->ops);
+			set_source(cr, stroke);
+			cairo_set_line_width(cr, o->stroke_width);
+			cairo_set_dash(cr, d->dash_count ? d->dash : NULL,
+			               d->dash_count, 0);
+			cairo_stroke(cr);
+			break;
+		case ROUGH_SET_FILL_PATH:
+			if (!fill)
+				break;
+			ops_path(cr, &set->ops);
+			set_source(cr, fill);
+			cairo_set_fill_rule(cr, rough_fill_evenodd(&d->rough)
+			                                ? CAIRO_FILL_RULE_EVEN_ODD
+			                                : CAIRO_FILL_RULE_WINDING);
+			cairo_fill(cr);
+			break;
+		case ROUGH_SET_FILL_SKETCH:
+			if (!fill)
+				break;
+			/* Hachure is many thin, light strokes; Cairo's coarser
+			   antialiasing renders them about 3x faster and the
+			   difference is hard to see.  */
+			cairo_save(cr);
+			cairo_set_antialias(cr, CAIRO_ANTIALIAS_FAST);
+			ops_path(cr, &set->ops);
+			set_source(cr, fill);
+			cairo_set_line_width(cr, o->fill_weight < 0
+			                                 ? o->stroke_width / 2
+			                                 : o->fill_weight);
+			cairo_set_dash(cr, NULL, 0, 0);
+			cairo_stroke(cr);
+			cairo_restore(cr);
+			break;
 		}
-		/* Outlines are filled with the canvas so the line stays hidden.  */
-		if (outline)
-			cairo_set_source_rgb(cr, 1, 1, 1);
-		cairo_fill_preserve(cr);
-		cairo_set_source_rgba(cr, stroke->r, stroke->g, stroke->b,
-		                      stroke->a);
-		cairo_stroke(cr);
-	} else {
-		/* "arrow", and a fallback for kinds not drawn yet.  */
-		double a = 20 * M_PI / 180;
-		double ca = cos(a), sa = sin(a);
-		for (int side = -1; side <= 1; side += 2)
-			rough_line(cr, r,
-			           tx - size * (ux * ca + side * px * sa),
-			           ty - size * (uy * ca + side * py * sa), tx, ty,
-			           multi);
-		cairo_stroke(cr);
 	}
-	cairo_restore(cr);
 }
 
-static void draw_arrowheads(cairo_t *cr, Rough *r, const ExcalElement *e,
-                            const Rgba *stroke, bool multi)
+/* Fill the freedraw outline: `getSvgPathFromStroke' drawn by Path2D.  */
+static void fill_outline(cairo_t *cr, const RoughPoints *outline,
+                         const Rgba *color)
 {
-	size_t n = e->point_count;
-	if (n < 2)
-		return;
-	const double *p = e->points;
-	draw_arrowhead(cr, r, e, e->end_arrowhead, e->x + p[2 * n - 2],
-	               e->y + p[2 * n - 1], e->x + p[2 * n - 4],
-	               e->y + p[2 * n - 3], stroke, multi);
-	draw_arrowhead(cr, r, e, e->start_arrowhead, e->x + p[0], e->y + p[1],
-	               e->x + p[2], e->y + p[3], stroke, multi);
-}
-
-static void stroke_freedraw(cairo_t *cr, const ExcalElement *e)
-{
-	size_t n = e->point_count;
+	size_t n = outline->count / 2;
 	if (n == 0)
 		return;
-	cairo_save(cr);
-	cairo_set_line_width(cr, e->stroke_width * 2.5);
+	const double *p = outline->xy;
 	cairo_new_path(cr);
-	if (n == 1) {
-		cairo_arc(cr, e->x + e->points[0], e->y + e->points[1],
-		          e->stroke_width * 1.25, 0, 2 * M_PI);
-		cairo_fill(cr);
-		cairo_restore(cr);
-		return;
+	cairo_move_to(cr, p[0], p[1]);
+	double cx = p[0], cy = p[1];
+	for (size_t i = 0; i < n; ++i) {
+		/* Q control end, as a cubic.  */
+		double qx = p[4 * i], qy = p[4 * i + 1];
+		double ex = p[4 * i + 2], ey = p[4 * i + 3];
+		cairo_curve_to(cr, cx + 2.0 / 3 * (qx - cx),
+		               cy + 2.0 / 3 * (qy - cy),
+		               ex + 2.0 / 3 * (qx - ex),
+		               ey + 2.0 / 3 * (qy - ey), ex, ey);
+		cx = ex;
+		cy = ey;
 	}
-	/* Quadratic midpoint smoothing; perfect-freehand is not ported.  */
-	cairo_move_to(cr, e->x + e->points[0], e->y + e->points[1]);
-	for (size_t i = 1; i + 1 < n; ++i) {
-		double x0 = e->x + e->points[2 * i];
-		double y0 = e->y + e->points[2 * i + 1];
-		double x1 = e->x + e->points[2 * i + 2];
-		double y1 = e->y + e->points[2 * i + 3];
-		double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-		double cx, cy;
-		cairo_get_current_point(cr, &cx, &cy);
-		cairo_curve_to(cr, cx + 2.0 / 3 * (x0 - cx),
-		               cy + 2.0 / 3 * (y0 - cy),
-		               mx + 2.0 / 3 * (x0 - mx),
-		               my + 2.0 / 3 * (y0 - my), mx, my);
-	}
-	cairo_line_to(cr, e->x + e->points[2 * n - 2],
-	              e->y + e->points[2 * n - 1]);
-	cairo_stroke(cr);
-	cairo_restore(cr);
+	cairo_line_to(cr, p[0], p[1]);
+	cairo_close_path(cr);
+	set_source(cr, color);
+	cairo_set_fill_rule(cr, CAIRO_FILL_RULE_WINDING);
+	cairo_fill(cr);
 }
 
-static void apply_stroke_style(cairo_t *cr, const ExcalElement *e)
+static void draw_element(cairo_t *cr, const ExcalElement *e,
+                         const Rgba *canvas)
 {
-	cairo_set_line_width(cr, e->stroke_width);
-	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-	cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-	if (e->stroke_style && strcmp(e->stroke_style, "dashed") == 0) {
-		double dash[] = {8, 8 + e->stroke_width};
-		cairo_set_dash(cr, dash, 2, 0);
-	} else if (e->stroke_style &&
-	           strcmp(e->stroke_style, "dotted") == 0) {
-		double dash[] = {1.5, 6 + e->stroke_width};
-		cairo_set_dash(cr, dash, 2, 0);
-	} else {
-		cairo_set_dash(cr, NULL, 0, 0);
-	}
-}
-
-static void draw_element(cairo_t *cr, const ExcalElement *e)
-{
-	Rough rough = {
-	        .rng = {.seed = e->seed ? e->seed : 1},
-	        .roughness = e->roughness,
-	        .bowing = 1,
-	        .max_offset = 2,
-	        .curve_fitting = 0.95,
-	};
 	Rgba stroke = {0.118, 0.118, 0.118, 1};
 	bool has_stroke = parse_color(e->stroke_color, &stroke);
 	Rgba fill;
 	bool has_fill = parse_color(e->background_color, &fill);
-	bool multi = !e->stroke_style || strcmp(e->stroke_style, "solid") == 0;
+
+	ExcalShape shape;
+	bool shaped = e->type != EXCAL_TEXT;
+	if (shaped)
+		excal_shape_generate(e, &shape);
 
 	cairo_save(cr);
 	if (e->angle != 0) {
+		/* Excalidraw rotates about the centre of
+		   getElementAbsoluteCoords.  */
 		double cx = e->x + e->width / 2, cy = e->y + e->height / 2;
+		if (shaped) {
+			cx = e->x + (shape.x1 + shape.x2) / 2;
+			cy = e->y + (shape.y1 + shape.y2) / 2;
+		}
 		cairo_translate(cr, cx, cy);
 		cairo_rotate(cr, e->angle);
 		cairo_translate(cr, -cx, -cy);
@@ -538,62 +197,29 @@ static void draw_element(cairo_t *cr, const ExcalElement *e)
 	if (e->opacity < 100)
 		cairo_push_group(cr);
 
-	switch (e->type) {
-	case EXCAL_RECTANGLE:
-	case EXCAL_ELLIPSE:
-	case EXCAL_DIAMOND:
-		fill_shape(cr, &rough, e, has_fill ? &fill : NULL);
-		if (has_stroke) {
-			cairo_new_path(cr);
-			apply_stroke_style(cr, e);
-			cairo_set_source_rgba(cr, stroke.r, stroke.g, stroke.b,
-			                      stroke.a);
-			if (e->type == EXCAL_RECTANGLE) {
-				stroke_rectangle(cr, &rough, e, multi);
-			} else if (e->type == EXCAL_ELLIPSE) {
-				rough_ellipse(cr, &rough, e->x + e->width / 2,
-				              e->y + e->height / 2, e->width,
-				              e->height, multi);
-			} else {
-				double x = e->x, y = e->y, w = e->width,
-				       h = e->height;
-				rough_line(cr, &rough, x + w / 2, y, x + w,
-				           y + h / 2, multi);
-				rough_line(cr, &rough, x + w, y + h / 2,
-				           x + w / 2, y + h, multi);
-				rough_line(cr, &rough, x + w / 2, y + h, x,
-				           y + h / 2, multi);
-				rough_line(cr, &rough, x, y + h / 2, x + w / 2,
-				           y, multi);
-			}
-			cairo_stroke(cr);
+	if (shaped) {
+		cairo_translate(cr, e->x, e->y);
+		if (shape.butt_caps) {
+			cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+			cairo_set_line_join(cr, CAIRO_LINE_JOIN_MITER);
+		} else {
+			cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+			cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 		}
-		break;
-	case EXCAL_LINE:
-	case EXCAL_ARROW:
-		if (has_stroke) {
-			cairo_new_path(cr);
-			apply_stroke_style(cr, e);
-			cairo_set_source_rgba(cr, stroke.r, stroke.g, stroke.b,
-			                      stroke.a);
-			stroke_linear(cr, &rough, e, multi);
-			cairo_stroke(cr);
-			draw_arrowheads(cr, &rough, e, &stroke, multi);
+		for (int i = 0; i < shape.count; ++i) {
+			const ExcalDrawable *d = &shape.items[i];
+			const Rgba *f = d->fill_source == EXCAL_FILL_STROKE
+			                        ? (has_stroke ? &stroke : NULL)
+			                : d->fill_source == EXCAL_FILL_CANVAS
+			                        ? canvas
+			                        : (has_fill ? &fill : NULL);
+			draw_drawable(cr, d, has_stroke ? &stroke : NULL, f);
 		}
-		break;
-	case EXCAL_FREEDRAW:
-		if (has_stroke) {
-			apply_stroke_style(cr, e);
-			cairo_set_source_rgba(cr, stroke.r, stroke.g, stroke.b,
-			                      stroke.a);
-			stroke_freedraw(cr, e);
-		}
-		break;
-	case EXCAL_TEXT:
+		if (has_stroke)
+			fill_outline(cr, &shape.outline, &stroke);
+		excal_shape_free(&shape);
+	} else {
 		excal_draw_text(cr, e, stroke.r, stroke.g, stroke.b, stroke.a);
-		break;
-	default:
-		break;
 	}
 
 	if (e->opacity < 100) {
@@ -681,19 +307,22 @@ static void draw_marquee(cairo_t *cr, const ExcalElement *e, double zoom)
 	cairo_restore(cr);
 }
 
-/* Conservative scene-space bounds of E, including rough jitter.  */
+
+/* Conservative scene-space bounds of E, including rough jitter, curve
+   overshoot and arrowheads.  */
 static void element_bounds(const ExcalElement *e, double *x1, double *y1,
                            double *x2, double *y2)
 {
 	double left, top, right, bottom;
 	element_extent(e, &left, &top, &right, &bottom);
+	double pad = excal_shape_padding(e);
 	if (e->angle != 0) {
+		/* Point-based elements rotate about the centre of their drawn
+		   curve, which lies within PAD of the extent's centre.  */
 		double cx = (left + right) / 2, cy = (top + bottom) / 2;
-		double r = hypot(right - left, bottom - top) / 2;
+		double r = hypot(right - left, bottom - top) / 2 + 2 * pad;
 		left = cx - r, right = cx + r, top = cy - r, bottom = cy + r;
 	}
-	/* Arrowheads, stroke width, roughness offsets, selection handles.  */
-	double pad = 30 + e->stroke_width * 2 + e->roughness * 6;
 	*x1 = left - pad, *y1 = top - pad, *x2 = right + pad, *y2 = bottom + pad;
 }
 
@@ -735,6 +364,9 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 		sy2[r] = (regions[r].y + regions[r].height) / scale -
 		         view->scroll_y;
 	}
+	Rgba canvas = {1, 1, 1, 1}, parsed;
+	if (parse_color(view->background_color, &parsed))
+		canvas = parsed;
 	bool *visible = calloc(count ? count : 1, sizeof *visible);
 	size_t drawn = 0;
 	for (size_t i = 0; i < count; ++i) {
@@ -744,7 +376,7 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 			visible[i] = x2 >= sx1[r] && x1 <= sx2[r] &&
 			             y2 >= sy1[r] && y1 <= sy2[r];
 		if (visible[i]) {
-			draw_element(cr, &elements[i]);
+			draw_element(cr, &elements[i], &canvas);
 			++drawn;
 		}
 	}

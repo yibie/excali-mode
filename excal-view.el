@@ -61,11 +61,36 @@
     (aset native 16 (excal--selection-flag element))
     native))
 
-(defun excal--native-shape-extras (_element)
+(defun excal--native-shape-extras (element)
   "Return extra shape rendering properties of ELEMENT for the module.
 The result is a vector [KEY VALUE ...] with string keys, read in C by
-`get_extra_*' in excal-module.c.  Reserved for shape rendering."
-  [])
+`get_extra_*' in excal-module.c.  Keys: \"roundnessType\",
+\"roundnessValue\", \"elbowed\", and for freedraw \"pressures\",
+\"simulatePressure\" (1, 0, or absent), \"strokeVariability\" and
+\"streamline\"."
+  (let ((roundness (excal--get element 'roundness))
+        (extras nil))
+    (when (consp roundness)
+      (when-let* ((type (excal--get roundness 'type)))
+        (push "roundnessType" extras) (push type extras))
+      (when-let* ((value (excal--get roundness 'value)))
+        (push "roundnessValue" extras) (push value extras)))
+    (when (excal--get element 'elbowed)
+      (push "elbowed" extras) (push t extras))
+    (when (equal (excal--get element 'type) "freedraw")
+      (when-let* ((pressures (excal--get element 'pressures)))
+        (push "pressures" extras) (push (vconcat pressures) extras))
+      (let ((cell (assq 'simulatePressure element)))
+        (when cell
+          (push "simulatePressure" extras)
+          (push (if (memq (cdr cell) '(nil :null :false)) 0 1) extras)))
+      (when-let* ((options (excal--get element 'strokeOptions))
+                  ((consp options)))
+        (when-let* ((variability (excal--get options 'variability)))
+          (push "strokeVariability" extras) (push variability extras))
+        (when-let* ((streamline (excal--get options 'streamline)))
+          (push "streamline" extras) (push streamline extras))))
+    (vconcat (nreverse extras))))
 
 (defun excal--native-text-extras (_element)
   "Return extra text rendering properties of ELEMENT for the module.

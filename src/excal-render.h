@@ -44,6 +44,15 @@ typedef struct {
 	/* 0: not selected, 1: selection box, 2: box with resize handles.  */
 	int selection;
 	bool rounded;
+	/* Shape extras, see `excal--native-shape-extras'.  */
+	int roundness_type;      /* 1 legacy, 2 proportional, 3 adaptive; 0 unknown.  */
+	double roundness_value;  /* NAN when absent.  */
+	bool elbowed;
+	double *pressures;       /* Freedraw pressures, or NULL.  */
+	size_t pressure_count;
+	int simulate_pressure;   /* 1 true, 0 false, -1 absent.  */
+	bool constant_width;     /* strokeOptions.variability == "constant".  */
+	double streamline;       /* strokeOptions.streamline, default 0.5.  */
 } ExcalElement;
 
 #define EXCAL_MAX_CLIPS 8
@@ -62,6 +71,9 @@ typedef struct {
 	   all of them are skipped.  */
 	int clip_count;
 	ExcalRect clips[EXCAL_MAX_CLIPS];
+	/* Canvas background colour for outline arrowheads ("#rrggbb"), or
+	   NULL for white.  */
+	const char *background_color;
 } ExcalView;
 
 /* Render ELEMENTS into the ARGB32 PIXELS buffer.  Return the number of
