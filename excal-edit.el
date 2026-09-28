@@ -17,6 +17,7 @@
 (require 'excal-hit)
 (require 'excal-create)
 (require 'excal-binding)
+(require 'excal-linear)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -250,6 +251,7 @@ adds to it."
       ((guard excal--multi-element)
        (excal--await-release)
        (excal--multi-click start))
+      ((and 'select (guard (excal--linear-mouse-down event start))))
       ((and 'select (let handle (excal--handle-at start)) (guard handle))
        (excal--transform-drag handle start shift
                               (memq 'meta (event-modifiers event))))
@@ -323,6 +325,13 @@ new text element is created."
      ;; While drawing points a double click is just another click.
      (excal--multi-element
       (excal--multi-click xy))
+     ;; Double-clicking a line edits its points; with super, arrows too.
+     ((and hit (or (equal (excal--get hit 'type) "line")
+                   (and (memq 'super (event-modifiers event))
+                        (excal--linear-p hit))))
+      (excal--deselect)
+      (excal--select (list hit))
+      (excal-edit-linear t))
      (group
       (setq excal--editing-group group
             excal--selection nil)
@@ -409,9 +418,11 @@ restores the original text."
   (excal--render))
 
 (defun excal-delete-selected ()
-  "Delete the selected elements."
+  "Delete the selected points in the point editor, else the selected elements."
   (interactive)
-  (when excal--selection
+  (if (and excal--editing-linear excal--selected-points)
+      (excal-delete-points)
+   (when excal--selection
     (let ((doomed excal--selection))
       (excal--forget-bindings-to doomed)
       (dolist (e doomed)
@@ -421,7 +432,7 @@ restores the original text."
         (excal--put e 'isDeleted t)
         (excal--touch e)))
     (excal--deselect)
-    (excal--render)))
+    (excal--render))))
 
 (defun excal--nudge (dx dy)
   "Move the selection by DX, DY scene units."

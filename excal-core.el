@@ -54,6 +54,8 @@
 (defvar-local excal--selection nil "Selected element alists, in z-order.")
 (defvar-local excal--editing-group nil
   "Group id entered by double-clicking, or nil; see `excal--unit'.")
+(defvar-local excal--editing-linear nil "Line or arrow in point-edit mode, or nil.")
+(defvar-local excal--selected-points nil "Indices of the points selected in the editor.")
 (defvar-local excal--marquee nil
   "Box-selection rectangle (X1 Y1 X2 Y2) in scene units while dragging.")
 (defvar-local excal--pointer nil "Pointer shape currently shown over the canvas.")

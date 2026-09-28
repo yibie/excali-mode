@@ -102,9 +102,11 @@ The selection is kept in z-order and without duplicates."
       (excal--select unit t))))
 
 (defun excal--deselect ()
-  "Clear the selection and leave any entered group."
+  "Clear the selection, leaving any entered group and the point editor."
   (setq excal--selection nil
-        excal--editing-group nil))
+        excal--editing-group nil
+        excal--editing-linear nil
+        excal--selected-points nil))
 
 (defun excal--inside-p (inner outer)
   "Return non-nil if rectangle INNER lies within rectangle OUTER."

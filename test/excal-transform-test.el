@@ -73,8 +73,9 @@
     (excal--linear-extent a)
     (excal--select (list a))
     (should-not (excal--transform-target))
+    ;; Its segment midpoint plus both ends.
     (should (equal (mapcar (lambda (v) (aref v 0)) (excal--overlay-natives))
-                   '("ov-circle" "ov-circle")))))
+                   '("ov-circle" "ov-circle" "ov-circle")))))
 
 (ert-deftest excal-transform-test-overlays ()
   "Borders, group boxes, the multi-selection box and handles."

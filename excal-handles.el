@@ -26,6 +26,7 @@
 (defconst excal-selection-color "#6965db" "Color of selection borders and handles.")
 
 (declare-function excal--binding-highlight-overlay "excal-binding")
+(declare-function excal--linear-editor-overlays "excal-linear")
 (defconst excal--handle-size 8 "Transform handle edge, screen px.")
 (defconst excal--handle-spacing 2 "DEFAULT_TRANSFORM_HANDLE_SPACING, screen px.")
 (defconst excal--rotation-gap 16 "ROTATION_RESIZE_HANDLE_GAP, screen px.")
@@ -118,6 +119,7 @@ selection of several elements their common box."
   (let ((single (excal--single-selection)))
     (cond
      ((null excal--selection) nil)
+     (excal--editing-linear nil)
      ((and single (excal--two-point-linear-p single)) nil)
      (single
       (list :box (excal--element-box single)
@@ -206,19 +208,6 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
             (push (cons group members) groups)))))
     (nreverse groups)))
 
-(defun excal--linear-point-overlays (element)
-  "Return endpoint dots for a lone two-point line or arrow ELEMENT."
-  (let* ((size (/ (float excal--point-handle-size) 2 excal--zoom))
-         (center (excal--box-center (excal--element-box element)))
-         (angle (excal--element-angle element))
-         (x (excal--get element 'x)) (y (excal--get element 'y)))
-    (mapcar (lambda (p)
-              (let ((c (excal--rotate-point (cons (+ x (aref p 0)) (+ y (aref p 1)))
-                                            center angle)))
-                (excal--ov "ov-circle" (- (car c) (/ size 2)) (- (cdr c) (/ size 2))
-                           size size :stroke "#5e5ad8" :fill "#ffffffe6")))
-            (excal--get element 'points))))
-
 (defun excal--handle-overlays (target)
   "Return handle overlays for TARGET, see `excal--transform-target'."
   (mapcar (lambda (h)
@@ -236,8 +225,9 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
          (grouped (apply #'append (mapcar #'cdr groups)))
          (single (excal--single-selection))
          (overlays nil))
-    (if (and single (excal--two-point-linear-p single))
-        (setq overlays (excal--linear-point-overlays single))
+    (if (or excal--editing-linear (and single (excal--two-point-linear-p single)))
+        ;; Only points: the editor hides the box and handles.
+        nil
       ;; Borders of elements not selected through a group.
       (dolist (e excal--selection)
         (unless (memq e grouped)
@@ -261,6 +251,10 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
       (when-let* ((target (excal--transform-target)))
         ;; OVERLAYS is built in reverse; keep the handles in order.
         (setq overlays (append (reverse (excal--handle-overlays target)) overlays))))
+    ;; Point handles of a lone line or arrow go above its box.
+    (when (fboundp 'excal--linear-editor-overlays)
+      (dolist (ov (excal--linear-editor-overlays))
+        (push ov overlays)))
     (when excal--marquee
       (push (excal--ov-box excal--marquee 0 :stroke excal-selection-color
                            :fill "#0000c80a")

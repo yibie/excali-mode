@@ -24,6 +24,7 @@
 (require 'excal-clipboard)
 (require 'excal-create)
 (require 'excal-actions)
+(require 'excal-linear)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -47,18 +48,22 @@
   (message "%s: not available yet" (key-description (this-command-keys))))
 
 (defun excal-return ()
-  "Finish drawing points, or edit the selected text."
+  "Finish drawing points, edit the selected line's points, or edit text."
   (interactive)
-  (if excal--multi-element
-      (excal-finish-multi-point)
-    (excal-edit-text)))
+  (let ((single (excal--single-selection)))
+    (cond (excal--multi-element (excal-finish-multi-point))
+          ((and single (equal (excal--get single 'type) "line")
+                (not excal--editing-linear))
+           (excal-edit-linear))
+          (t (excal-edit-text)))))
 
 (defun excal-escape-dwim ()
-  "Finish drawing points, or leave the entered group, or deselect."
+  "Finish drawing points, leave the point editor or the entered group,
+or deselect."
   (interactive)
-  (if excal--multi-element
-      (excal-finish-multi-point)
-    (excal-escape)))
+  (cond (excal--multi-element (excal-finish-multi-point))
+        (excal--editing-linear (excal-stop-editing-linear))
+        (t (excal-escape))))
 
 (defvar-keymap excal-mode-map
   ;; Mouse.
@@ -97,7 +102,8 @@
   "s-<" #'excal-decrease-font-size "s->" #'excal-increase-font-size
   "M-s-c" #'excal-copy-styles "M-s-v" #'excal-paste-styles
   ;; Editing.
-  "RET" #'excal-return
+  "RET" #'excal-return "s-<return>" #'excal-edit-linear-any
+  "s-<double-down-mouse-1>" #'excal-double-click
   "<escape>" #'excal-escape-dwim
   "<delete>" #'excal-delete-selected "DEL" #'excal-delete-selected
   "<left>" #'excal-nudge-left "<right>" #'excal-nudge-right
