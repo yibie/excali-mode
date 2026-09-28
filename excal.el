@@ -24,6 +24,7 @@
 (require 'excal-style)
 (require 'excal-edit)
 (require 'excal-cursor)
+(require 'excal-text-edit)
 (require 'excal-history)
 (require 'excal-clipboard)
 (require 'excal-create)

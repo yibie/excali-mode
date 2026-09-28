@@ -539,18 +539,17 @@
 ;;;; Commands
 
 (defmacro excal-text-test--typing (result &rest body)
-  "Run BODY with minibuffer text editing stubbed to preview and return RESULT."
+  "Run BODY, which starts a text edit, then type RESULT over the text.
+RESULT nil cancels the edit instead."
   (declare (indent 1))
-  `(cl-letf (((symbol-function 'excal--edit-text-live)
-              (lambda (element)
-                (let* ((container (excal--container-of element))
-                       (geometry (excal--container-geometry container)))
-                  (if ,result
-                      (excal--preview-text element container geometry ,result)
-                    (when container (excal--restore-geometry container geometry))))
-                ,result))
-             ((symbol-function 'excal--render) #'ignore))
-     ,@body))
+  `(cl-letf (((symbol-function 'excal--render) #'ignore))
+     ,@body
+     (let ((result ,result))
+       (if (null result)
+           (excal-text-edit-cancel)
+         (delete-region (plist-get excal--text-edit :beg) (plist-get excal--text-edit :end))
+         (insert result)
+         (excal-text-edit-submit)))))
 
 (ert-deftest excal-text-test-edit-container-text ()
   "Enter on a shape adds a centered label; cancelling leaves no trace."

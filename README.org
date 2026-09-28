@@ -76,6 +76,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | drag inside the selection box | move |
 | corner handles, border, round handle | resize (shift keeps ratio, meta from center), rotate (shift snaps 15°) |
 | double-click | enter group, edit text, add or edit a shape's label, add text |
+| while editing text | type on the canvas; =RET= newline, =ESC= / =C-RET= / click outside to finish, =C-g= to cancel, =TAB= / =S-TAB= indent |
 | =s=, =g=, =F= | style panel, background, font |
 | =H=, =V= | flip horizontally / vertically |
 | =TAB= | cycle rectangle / diamond / ellipse |
@@ -209,6 +210,8 @@ No dark-mode export yet.
 - =excal-library.el= — =.excalidrawlib= library: add, insert, import,
   export, browse.
 - =excal-edit.el= — drags, mouse commands, text, grouping, z-order.
+- =excal-text-edit.el= — on-canvas text editing (caret, selection,
+  input methods) through a hidden stretch of buffer text.
 - =excal-cursor.el= — pointer shapes (upstream's CSS cursors; on macOS the
   module shows them over the canvas, elsewhere the nearest Emacs =pointer=).
 - =excal-history.el= — undo/redo with shared per-element snapshots.
@@ -226,8 +229,9 @@ No dark-mode export yet.
 Not ported: perfect-freehand (pen strokes are smoothed polylines), arrow
 bindings, groups, frame behaviour (membership, the frame tool), image
 cropping and pasting, undo, rotation (rotated elements cannot be
-resized), collaboration.  Text is typed in the
-minibuffer with a live preview rather than on the canvas.  Rough strokes resemble but do not match the web
+resized), collaboration.  Frame names are still
+edited in the minibuffer, and an input method's candidate window is not
+placed at the caret.  Rough strokes resemble but do not match the web
 renderer pixel for pixel.  Label positions on curved arrows follow the
 curve without roughjs jitter.  Without =make fonts=, text uses system
 fallback fonts, so widths and wrapping differ from the web app.
