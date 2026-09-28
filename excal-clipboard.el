@@ -15,6 +15,8 @@
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)
+(require 'excal-restore)
+(require 'excal-index)
 
 (defconst excal-clipboard-type "excalidraw/clipboard"
   "Value of the `type' field of Excalidraw clipboard data.")
@@ -112,6 +114,7 @@
 (defun excal--insert-elements (elements)
   "Add ELEMENTS on top of the scene and select them."
   (setq excal--elements (append excal--elements elements))
+  (excal--sync-moved-indices elements)
   (excal--deselect)
   (excal--select elements))
 
@@ -143,8 +146,10 @@ The pasted content is centered on the mouse, or on the view when the
 mouse is not over the canvas."
   (interactive)
   (let* ((text (current-kill 0 t))
-         (parsed (seq-remove (lambda (e) (excal--get e 'isDeleted))
-                             (excal--parse-clipboard text)))
+         ;; Clipboard data may come from any Excalidraw version.
+         (parsed (excal--restore-elements (excal--parse-clipboard text)
+                                          :existing excal--elements
+                                          :delete-invisible t))
          (target (or (excal--mouse-scene-xy) (excal--view-center))))
     (cond
      (parsed
