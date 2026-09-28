@@ -91,8 +91,8 @@ static NSView *find_emacs_view(NSView *root)
 	return nil;
 }
 
-void *excal_layer_create(double left, double top, double width,
-                         double height)
+void *excal_find_emacs_view(double left, double top, double width,
+                            double height)
 {
 	CGFloat screen_height = NSScreen.screens.firstObject.frame.size.height;
 	NSView *best = nil;
@@ -112,6 +112,14 @@ void *excal_layer_create(double left, double top, double width,
 			best = view;
 		}
 	}
+	return (__bridge void *)best;
+}
+
+void *excal_layer_create(double left, double top, double width,
+                         double height)
+{
+	NSView *best = (__bridge NSView *)excal_find_emacs_view(left, top, width,
+	                                                        height);
 	if (!best)
 		return NULL;
 	ExcalOverlay *overlay = [ExcalOverlay new];

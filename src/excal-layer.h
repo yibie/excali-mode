@@ -6,6 +6,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* The Emacs view (an unretained NSView *) whose screen rectangle (top-left
+   origin, points) best matches LEFT TOP WIDTH HEIGHT, or NULL.  */
+void *excal_find_emacs_view(double left, double top, double width,
+                            double height);
+
 /* Attach an overlay to the Emacs view whose screen rectangle (top-left
    origin, points) best matches LEFT TOP WIDTH HEIGHT.  */
 void *excal_layer_create(double left, double top, double width,

@@ -13,6 +13,8 @@
 (require 'excal-image)
 
 (declare-function excal--update-pointer "excal-edit")
+(declare-function excal--sync-cursor-view "excal-cursor")
+(declare-function excal--hide-cursor-view "excal-cursor")
 (declare-function excal--overlay-natives "excal-handles")
 (declare-function excal--erase-opacity-for "excal-erase")
 (declare-function excal--text-native-extras "excal-text")
@@ -455,6 +457,7 @@ Return a list of (OFFSET . LENGTH)."
     (if (eq excal--backend 'layer)
         (excal--sync-layer window width height)
       (excal--hide-layer))
+    (excal--sync-cursor-view window width height)
     (excal--render)
     (excal--update-pointer)))
 
@@ -465,7 +468,8 @@ Return a list of (OFFSET . LENGTH)."
       (when (derived-mode-p 'excal-mode)
         (if-let* ((window (get-buffer-window buffer frame)))
             (excal--sync-canvas window)
-          (excal--hide-layer))))))
+          (excal--hide-layer)
+          (excal--hide-cursor-view))))))
 
 (defun excal-cycle-backend ()
   "Switch to the next presentation backend."

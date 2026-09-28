@@ -23,6 +23,7 @@
 (require 'excal-hit)
 (require 'excal-style)
 (require 'excal-edit)
+(require 'excal-cursor)
 (require 'excal-history)
 (require 'excal-clipboard)
 (require 'excal-create)
@@ -185,6 +186,7 @@ or deselect."
         excal--pixel-scale (excal--guess-pixel-scale)
         excal--backend (excal--resolve-backend))
   (add-hook 'kill-buffer-hook #'excal--hide-layer nil t)
+  (add-hook 'kill-buffer-hook #'excal--hide-cursor-view nil t)
   (add-hook 'window-size-change-functions #'excal--window-size-change)
   (add-hook 'window-buffer-change-functions #'excal--window-size-change)
   ;; One undo step per command that changed the scene.

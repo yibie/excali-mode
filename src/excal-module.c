@@ -16,6 +16,7 @@
 #include "excal-sticky.h"
 #ifdef EXCAL_HAVE_LAYER
 #include "excal-layer.h"
+#include "excal-cursor.h"
 #endif
 
 int plugin_is_GPL_compatible;
@@ -714,6 +715,76 @@ static emacs_value Fexcal_native_layer_flush(emacs_env *env, ptrdiff_t nargs,
 	excal_layer_flush();
 	return Qt;
 }
+
+/* Pointer shapes over the canvas (macOS only).  */
+
+static void *get_cursor_view(emacs_env *env, emacs_value value)
+{
+	if (!type_is(env, value, Quser_ptr) ||
+	    env->get_user_finalizer(env, value) != excal_cursor_view_destroy)
+		return NULL;
+	return env->get_user_ptr(env, value);
+}
+
+/* (excal-native-cursor-view-create LEFT TOP WIDTH HEIGHT) */
+static emacs_value Fexcal_native_cursor_view_create(emacs_env *env,
+                                                    ptrdiff_t nargs,
+                                                    emacs_value *args,
+                                                    void *data)
+{
+	(void)nargs;
+	(void)data;
+	void *view = excal_cursor_view_create(
+	        get_number(env, args[0], 0), get_number(env, args[1], 0),
+	        get_number(env, args[2], 0), get_number(env, args[3], 0));
+	return view ? env->make_user_ptr(env, excal_cursor_view_destroy, view)
+	            : Qnil;
+}
+
+/* (excal-native-cursor-view-set-geometry VIEW X Y WIDTH HEIGHT VISIBLE) */
+static emacs_value Fexcal_native_cursor_view_set_geometry(emacs_env *env,
+                                                          ptrdiff_t nargs,
+                                                          emacs_value *args,
+                                                          void *data)
+{
+	(void)nargs;
+	(void)data;
+	void *view = get_cursor_view(env, args[0]);
+	if (!view)
+		return Qnil;
+	excal_cursor_view_set_geometry(view, get_number(env, args[1], 0),
+	                               get_number(env, args[2], 0),
+	                               get_number(env, args[3], 0),
+	                               get_number(env, args[4], 0),
+	                               env->is_not_nil(env, args[5]));
+	return Qt;
+}
+
+/* (excal-native-cursor-set VIEW NAME) */
+static emacs_value Fexcal_native_cursor_set(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	void *view = get_cursor_view(env, args[0]);
+	char *name = get_string(env, args[1]);
+	bool ok = view && name && excal_cursor_set(view, name);
+	free(name);
+	return ok ? Qt : Qnil;
+}
+
+/* (excal-native-cursor-known-p NAME) */
+static emacs_value Fexcal_native_cursor_known_p(emacs_env *env,
+                                                ptrdiff_t nargs,
+                                                emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *name = get_string(env, args[0]);
+	bool ok = name && excal_cursor_known(name);
+	free(name);
+	return ok ? Qt : Qnil;
+}
 #endif
 
 /* Shape introspection, for tests and other Elisp code.  */
@@ -1392,6 +1463,20 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "Show FB's pixels in LAYER.\n\n(fn LAYER FB)");
 	bind(env, "excal-native-layer-flush", Fexcal_native_layer_flush, 0,
 	     "Commit pending CoreAnimation changes.\n\n(fn)");
+	bind(env, "excal-native-cursor-view-create",
+	     Fexcal_native_cursor_view_create, 4,
+	     "Add a hidden cursor view to the Emacs view at screen rectangle.\n\n"
+	     "Arguments are as for `excal-native-layer-create'.\n\n"
+	     "(fn LEFT TOP WIDTH HEIGHT)");
+	bind(env, "excal-native-cursor-view-set-geometry",
+	     Fexcal_native_cursor_view_set_geometry, 6,
+	     "Place cursor VIEW at view rectangle X Y WIDTH HEIGHT.\n\n"
+	     "(fn VIEW X Y WIDTH HEIGHT VISIBLE)");
+	bind(env, "excal-native-cursor-set", Fexcal_native_cursor_set, 2,
+	     "Show the CSS cursor NAME (a string) over VIEW.\n\n"
+	     "Return nil if NAME is unknown.\n\n(fn VIEW NAME)");
+	bind(env, "excal-native-cursor-known-p", Fexcal_native_cursor_known_p,
+	     1, "Return t if NAME is a cursor the module can show.\n\n(fn NAME)");
 #endif
 	env->funcall(env, env->intern(env, "provide"), 1,
 	             (emacs_value[]){env->intern(env, "excal-module")});

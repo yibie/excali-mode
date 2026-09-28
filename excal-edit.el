@@ -23,6 +23,7 @@
 (require 'excal-erase)
 (require 'excal-index)
 (require 'excal-elbow)
+(require 'excal-cursor)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -47,38 +48,10 @@ The box is the selection bounds padded like `draw_selection'."
 
 ;;;; Pointer shape
 
-(defun excal--pointer-at (scene-xy)
-  "Return the pointer shape for SCENE-XY given the current tool.
-Emacs only offers a few portable shapes: there is no diagonal resize,
-rotate, move or crosshair pointer, so corners use `hdrag', and the
-rotation handle and elements `hand'."
-  (pcase excal--tool
-    ('select
-     (let ((handle (excal--handle-at scene-xy)))
-       (cond ((eq handle 'rotation) 'hand)
-             ((memq handle '(n s)) 'nhdrag)
-             (handle 'hdrag)
-             ((or (excal--hit scene-xy) (excal--in-selection-box-p scene-xy))
-              'hand)
-             (t 'arrow))))
-    ('hand 'hand)
-    ('eraser 'arrow)
-    ('text 'text)
-    (_ 'arrow)))
-
-(defun excal--set-pointer (pointer)
-  "Show POINTER over the canvas.
-The shape is a text property, so changing it touches neither the image
-cache nor the canvas pixels."
-  (unless (eq pointer excal--pointer)
-    (setq excal--pointer pointer)
-    (with-silent-modifications
-      (put-text-property (point-min) (point-max) 'pointer pointer))))
-
 (defun excal--update-pointer ()
   "Recompute the pointer shape at the current mouse position."
   (when-let* ((xy (excal--mouse-scene-xy)))
-    (excal--set-pointer (excal--pointer-at xy))))
+    (excal--set-pointer (excal--cursor-at xy))))
 
 (defun excal-mouse-move (event)
   "Update the pointer shape for mouse movement EVENT."
@@ -89,7 +62,7 @@ cache nor the canvas pixels."
       (let ((xy (excal--event-scene-xy event)))
         (when excal--multi-element
           (excal--multi-move xy))
-        (excal--set-pointer (excal--pointer-at xy))))))
+        (excal--set-pointer (excal--cursor-at xy))))))
 
 ;;;; Dragging
 
@@ -128,6 +101,7 @@ Return the release event, or nil if another event ended the drag."
 (defun excal--pan-drag (event button)
   "Pan the view while BUTTON, pressed at EVENT, is held."
   (let ((last (excal--event-window-xy event)))
+    (excal--set-pointer 'grabbing)
     (excal--drag-loop
      (lambda (ev)
        (let ((xy (excal--event-window-xy ev)))
@@ -330,7 +304,8 @@ adds to it."
 (defun excal-mouse-pan (event)
   "Pan the view while the middle button, pressed at EVENT, is held."
   (interactive "e")
-  (excal--pan-drag event 'mouse-2))
+  (excal--pan-drag event 'mouse-2)
+  (excal--update-pointer))
 
 (defun excal--await-release ()
   "Consume input until the mouse button that started this command is released.
