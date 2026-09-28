@@ -88,6 +88,16 @@ or deselect."
   "<double-down-mouse-1>" #'excal-double-click
   "<down-mouse-2>" #'excal-mouse-pan
   "<mouse-movement>" #'excal-mouse-move
+  ;; The canvas is one character: Emacs's region and secondary selection
+  ;; commands would only highlight it whole, whichever click reaches them.
+  "<remap> <mouse-drag-region>" #'ignore
+  "<remap> <mouse-drag-region-rectangle>" #'ignore
+  "<remap> <mouse-set-region>" #'ignore
+  "<remap> <mouse-save-then-kill>" #'ignore
+  "<remap> <mouse-drag-secondary>" #'ignore
+  "<remap> <mouse-start-secondary>" #'ignore
+  "<remap> <mouse-set-secondary>" #'ignore
+  "<remap> <mouse-secondary-save-then-kill>" #'ignore
   "<wheel-up>" #'excal-wheel "<wheel-down>" #'excal-wheel
   "<wheel-left>" #'excal-wheel "<wheel-right>" #'excal-wheel
   "C-<wheel-up>" #'excal-wheel "C-<wheel-down>" #'excal-wheel
