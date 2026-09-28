@@ -29,8 +29,6 @@
 (declare-function excal--point-at "excal-linear")
 (declare-function excal--midpoint-at "excal-linear")
 (declare-function excal--elbow-p "excal-elbow")
-(declare-function excal--text-edit-in-element-p "excal-text-edit")
-(defvar excal--text-edit)
 (declare-function excal--elbow-end-at "excal-elbow")
 (declare-function excal--elbow-midpoint-at "excal-elbow")
 (declare-function excal-native-cursor-view-create "excal-module")
@@ -104,8 +102,6 @@ there would do."
   "Return the pointer shape for SCENE-XY given the current tool.
 `setCursorForShape' plus the hover rules of `handleCanvasPointerMove'."
   (cond
-   ((and (bound-and-true-p excal--text-edit) (excal--text-edit-in-element-p scene-xy))
-    'text)
    ((bound-and-true-p excal--multi-element) 'crosshair)
    (t
     (pcase excal--tool

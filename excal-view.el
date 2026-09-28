@@ -439,11 +439,8 @@ Return a list of (OFFSET . LENGTH)."
             excal--rendered-origin nil
             excal--canvas nil
             excal--tiles nil)
-      (let ((inhibit-read-only t)
-            (buffer-undo-list t)
-            (point (point)))
-        (delete-region (or excal--canvas-start (point-min)) (point-max))
-        (goto-char (point-max))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
         (pcase excal--backend
           ('canvas
            (setq excal--canvas (excal--make-canvas dw dh))
@@ -453,7 +450,7 @@ Return a list of (OFFSET . LENGTH)."
            ;; Reserve the area so mouse events land in the text area.
            (insert (propertize " " 'display
                                `(space :width (,width) :height (,height))))))
-        (goto-char (if excal--canvas-start point (point-min)))
+        (goto-char (point-min))
         (setq excal--pointer nil))
       ;; Canvas pixel buffers exist only once the images are displayed.
       (redisplay t))

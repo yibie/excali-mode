@@ -31,8 +31,6 @@
   (if (eq excal--theme 'dark) excal-selection-color-dark excal-selection-color))
 
 (declare-function excal--binding-highlight-overlay "excal-binding")
-(declare-function excal--text-edit-overlays "excal-text-edit")
-(defvar excal--text-edit)
 (declare-function excal--linear-editor-overlays "excal-linear")
 (declare-function excal--grid-native "excal-snap")
 (declare-function excal--link-icon-overlays "excal-erase")
@@ -242,14 +240,9 @@ Tool overlays (laser, lasso, eye dropper) go on top."
          (grouped (apply #'append (mapcar #'cdr groups)))
          (single (excal--single-selection))
          (overlays nil))
-    (cond
-     ((and (boundp 'excal--text-edit) excal--text-edit)
-      ;; Text being edited shows its caret instead of the selection.
-      (setq overlays (reverse (excal--text-edit-overlays))))
-     ((or excal--editing-linear (and single (excal--two-point-linear-p single)))
-      ;; Only points: the editor hides the box and handles.
-      nil)
-     (t
+    (if (or excal--editing-linear (and single (excal--two-point-linear-p single)))
+        ;; Only points: the editor hides the box and handles.
+        nil
       ;; Borders of elements not selected through a group; a lone bound
       ;; elbow arrow has none.
       (dolist (e excal--selection)
@@ -275,7 +268,7 @@ Tool overlays (laser, lasso, eye dropper) go on top."
               overlays))
       (when-let* ((target (excal--transform-target)))
         ;; OVERLAYS is built in reverse; keep the handles in order.
-        (setq overlays (append (reverse (excal--handle-overlays target)) overlays)))))
+        (setq overlays (append (reverse (excal--handle-overlays target)) overlays))))
     ;; Point handles of a lone line or arrow go above its box.
     (when (fboundp 'excal--linear-editor-overlays)
       (dolist (ov (excal--linear-editor-overlays))
