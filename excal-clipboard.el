@@ -15,6 +15,7 @@
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)
+(require 'excal-index)
 
 (defconst excal-clipboard-type "excalidraw/clipboard"
   "Value of the `type' field of Excalidraw clipboard data.")
@@ -112,6 +113,7 @@
 (defun excal--insert-elements (elements)
   "Add ELEMENTS on top of the scene and select them."
   (setq excal--elements (append excal--elements elements))
+  (excal--sync-moved-indices elements)
   (excal--deselect)
   (excal--select elements))
 

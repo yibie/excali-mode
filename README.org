@@ -83,7 +83,12 @@ does the same in a fresh GUI Emacs and writes =bench.txt=.
 - =src/excal-module.c= — module glue, framebuffer, tile diffing.
 - =src/excal-preview.c= — zoom previews scaled from rendered pixels.
 - =src/excal-layer.m= — CoreAnimation overlay backend (macOS).
-- =excal-core.el= — module loading, shared state, document model.
+- =excal-core.el= — module loading, shared state, document model, file
+  reading and saving (JSON written like upstream's =JSON.stringify(…, null, 2)=).
+- =excal-restore.el= — restore/migration of loaded scenes (port of
+  upstream =restore.ts=); unknown element types and fields are kept.
+- =excal-index.el= — fractional z-order indices (=fractional-indexing=,
+  =syncInvalidIndices=, =syncMovedIndices=).
 - =excal-view.el= — framebuffer, presentation backends, damage, scroll
   reuse, pan/zoom, export.
 - =excal-select.el= — selection model, groups, box selection, overlays.

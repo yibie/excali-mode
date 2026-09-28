@@ -13,6 +13,8 @@
 ;;; Code:
 
 (require 'excal-core)
+(require 'excal-index)
+(require 'excal-restore)
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)
@@ -98,12 +100,18 @@
   (add-hook 'post-command-hook #'excal--commit nil t))
 
 (defun excal--open (doc file name)
-  "Show DOC saved to FILE in a buffer called NAME."
+  "Show DOC saved to FILE in a buffer called NAME.
+DOC is a parsed .excalidraw file; it is restored (migrated and repaired,
+see `excal--restore-doc') before anything else sees it."
   (unless (and (display-graphic-p) (image-type-available-p 'canvas))
     (error "excal needs a graphical Emacs with Canvas images"))
-  (let ((buffer (generate-new-buffer name)))
+  (let ((doc (excal--restore-doc doc))
+        (buffer (generate-new-buffer name)))
     (pop-to-buffer-same-window buffer)
     (excal-mode)
+    ;; Keep fractional indices valid after every command, before
+    ;; `excal--commit' snapshots the scene; see excal-index.el.
+    (add-hook 'post-command-hook #'excal--sync-indices-maybe -50 t)
     (setq excal--file file
           excal--doc doc
           excal--elements (append (alist-get 'elements doc) nil))

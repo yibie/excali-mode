@@ -12,6 +12,7 @@
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-style)
+(require 'excal-index)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -628,6 +629,7 @@ The new group becomes the outermost group of every selected element."
 Selected elements keep their relative order."
   (when excal--selection
     (setq excal--elements (funcall fn excal--elements excal--selection))
+    (excal--sync-moved-indices excal--selection)
     ;; Keep the selection in z-order, and let history see the change.
     (excal--select excal--selection)
     (dolist (e excal--selection) (excal--touch e))
