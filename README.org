@@ -7,7 +7,7 @@ edited with mouse/keyboard commands.
 * Build and test
 
 #+begin_src shell
-make            # builds excal-module (.so/.dylib/.dll per Emacs; needs cairo, pangocairo)
+make            # builds excal-module (.so/.dylib/.dll per Emacs; needs cairo, pangocairo, zlib)
 make info       # shows the detected platform, Emacs, header and module name
 make test       # batch ERT: round-trip, text, rendering, tiles, resizing
 make try        # opens the sample in a clean GUI Emacs
@@ -22,6 +22,9 @@ make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 (require 'excal)
 (excal-open "test/sample.excalidraw")   ; or (excal-new)
 #+end_src
+
+=excal-open= also opens PNG and SVG files exported with an embedded scene
+(by excal or Excalidraw); such scenes are saved to a new =.excalidraw= file.
 
 Plain keys follow Excalidraw; its Mod shortcuts use super (Cmd on
 macOS), and the usual Emacs keys work too.  =?= lists everything.
@@ -56,7 +59,9 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | wheel, =C-=wheel / pinch, middle drag | pan, zoom, pan |
 | =s-== =s--= =s-0= (=C-x C-= - 0=), =!= =@= =#= | zoom, zoom to fit all / selection |
 | =PgUp= =PgDn= (with shift: horizontal) | page |
+| =9= | insert an image file at the view centre |
 | =s-s=, =C-x C-s= | save |
+| =s-E=, =C-c C-e= | export PNG or SVG (by extension; the selection if any, =C-u= for all) |
 | =C-c C-b=, =C-c C-p= | cycle backend, toggle 1x/2x (debug) |
 
 * Presentation backends
@@ -105,6 +110,32 @@ Pango, fontconfig elsewhere) when excal loads; without them text falls
 back to system fonts, see =excal-font-families= and
 =M-x excal-font-report=.
 
+* Images, frames and export
+
+Images show =files[fileId].dataURL=; each file is decoded once per
+session in the module and freed when no excal buffer uses it.  PNG is
+decoded by Cairo; SVG needs librsvg, WebP libwebp, and JPEG, GIF (first
+frame), BMP, ICO etc. gdk-pixbuf.  These are optional: the Makefile uses
+whichever pkg-config finds (disable with =EXCAL_WITH_RSVG=no=,
+=EXCAL_WITH_PIXBUF=no=, =EXCAL_WITH_WEBP=no=), and undecodable images show
+upstream's error placeholder.  Flips (=scale=), =crop=, rounded corners
+and opacity follow upstream.  =excal-insert-image= ids files by SHA-1 and
+scales raster images larger than =excal-image-max-size= (1440) down, as PNG.
+
+Frames draw upstream's outline (2px, radius 8, constant on screen) and
+their name above (14px, cut with an ellipsis), clip their children and
+multiply their opacity into them.
+
+=excal-export-png= / =excal-export-svg= follow upstream's export:
+padding =excal-export-padding= (10), scale =excal-export-scale= (1–3),
+=excal-export-background=, frame names as Helvetica 14px text, a single
+selected frame exported alone, and =excal-export-embed-scene= (on by
+default) embedding the scene as upstream does (PNG =tEXt= chunk
+=application/vnd.excalidraw+json= with a zlib-compressed payload; SVG
+=<metadata>= payload version 2).  The SVG is Cairo's (text as glyph
+paths, images embedded as PNG) with upstream's root size and metadata.
+No dark-mode export yet.
+
 * Layout
 
 - =src/excal-render.c= — roughjs-style strokes, hachure fills, Pango text.
@@ -112,6 +143,10 @@ back to system fonts, see =excal-font-families= and
 - =src/excal-module.c= — module glue, framebuffer, tile diffing.
 - =src/excal-preview.c= — zoom previews scaled from rendered pixels.
 - =src/excal-layer.m= — CoreAnimation overlay backend (macOS).
+- =src/excal-image.c= — image decoding, the image cache, image and
+  placeholder drawing.
+- =src/excal-frame.c= — frame outlines, names and child clipping.
+- =src/excal-export.c= — PNG/SVG export surfaces, tEXt chunks, zlib.
 - =excal-core.el= — module loading, shared state, document model, file
   reading and saving (JSON written like upstream's =JSON.stringify(…, null, 2)=).
 - =excal-restore.el= — restore/migration of loaded scenes (port of
@@ -121,7 +156,7 @@ back to system fonts, see =excal-font-families= and
 - =excal-text.el= — fonts, text measurement, wrapping, bound text and
   arrow labels.
 - =excal-view.el= — framebuffer, presentation backends, damage, scroll
-  reuse, pan/zoom, export.
+  reuse, pan/zoom.
 - =excal-select.el= — selection model, groups, box selection, overlays.
 - =excal-handles.el= — selection UI geometry, transform handles.
 - =excal-transform.el= — resize / rotate math.
@@ -139,13 +174,19 @@ back to system fonts, see =excal-font-families= and
 - =excal-edit.el= — pointer, drags, mouse commands, text, grouping, z-order.
 - =excal-history.el= — undo/redo with shared per-element snapshots.
 - =excal-clipboard.el= — copy/cut/paste/duplicate.
+- =excal-image.el= — image render data, the files map and the module's
+  image cache, =excal-insert-image=.
+- =excal-frame-render.el= — frame titles, name label bounds, frame
+  render data.
+- =excal-export.el= — PNG/SVG export and import of embedded scenes.
 - =excal-bench.el= — backend benchmarks.
 - =excal.el= — keymap, major mode and entry points.
 
 * Known gaps
 
 Not ported: perfect-freehand (pen strokes are smoothed polylines), arrow
-bindings, groups, frames, images, undo, rotation (rotated elements cannot be
+bindings, groups, frame behaviour (membership, the frame tool), image
+cropping and pasting, undo, rotation (rotated elements cannot be
 resized), collaboration.  Text is typed in the
 minibuffer with a live preview rather than on the canvas.  Rough strokes resemble but do not match the web
 renderer pixel for pixel.  Label positions on curved arrows follow the

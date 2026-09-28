@@ -17,6 +17,7 @@
 (require 'excal-style)
 (require 'excal-restore)
 (require 'excal-index)
+(require 'excal-image)
 
 (defconst excal-clipboard-type "excalidraw/clipboard"
   "Value of the `type' field of Excalidraw clipboard data.")
@@ -28,12 +29,30 @@
 
 ;;;; Serialization
 
+(defun excal--clipboard-files (elements)
+  "Return the document's files entries used by image ELEMENTS."
+  (let ((ids (delq nil (mapcar (lambda (e) (and (equal (excal--get e 'type) "image")
+                                                 (excal--get e 'fileId)))
+                               elements))))
+    (seq-filter (lambda (entry) (member (symbol-name (car entry)) ids))
+                (let ((files (alist-get 'files excal--doc)))
+                  (and (listp files) files)))))
+
 (defun excal--clipboard-json (elements)
-  "Return Excalidraw clipboard JSON for ELEMENTS."
+  "Return Excalidraw clipboard JSON for ELEMENTS, with their image files."
   (json-serialize (list (cons 'type excal-clipboard-type)
                         (cons 'elements (vconcat elements))
-                        (cons 'files (list)))
+                        (cons 'files (excal--clipboard-files elements)))
                   :null-object :null :false-object :false))
+
+(defun excal--parse-clipboard-files (text)
+  "Return the files map in Excalidraw clipboard TEXT, an alist, or nil."
+  (condition-case nil
+      (let ((files (alist-get 'files (json-parse-string
+                                      text :object-type 'alist :array-type 'array
+                                      :null-object :null :false-object :false))))
+        (and (listp files) files))
+    (error nil)))
 
 (defun excal--parse-clipboard (text)
   "Return the elements in Excalidraw clipboard TEXT, or nil if it is not one."
@@ -153,6 +172,9 @@ mouse is not over the canvas."
          (target (or (excal--mouse-scene-xy) (excal--view-center))))
     (cond
      (parsed
+      ;; Images bring their data along.
+      (when-let* ((files (excal--parse-clipboard-files text)))
+        (excal--image-add-files files))
       (let* ((clones (excal--clone-elements parsed))
              (bounds (excal--elements-bounds clones))
              (dx (- (car target) (/ (+ (nth 0 bounds) (nth 2 bounds)) 2.0)))

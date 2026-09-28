@@ -170,7 +170,8 @@ With CLOSED, the last point joins the first."
 Bound text counts as its container.  When several elements are hit, the
 topmost one must also pass half the threshold, as upstream does, so a
 stroke right next to another element does not steal the press."
-  (let ((hits nil))
+  (or (excal--hit-frame-name scene-xy)
+   (let ((hits nil))
     (dolist (e (reverse (excal--live-elements)))
       ;; Locked elements cannot be picked; a press on them selects by box.
       (when (and (not (excal--get e 'locked))
@@ -181,7 +182,21 @@ stroke right next to another element does not steal the press."
              (not (excal--hit-element-p (car hits) scene-xy
                                         (/ (excal--hit-threshold (car hits)) 2))))
         (cadr hits)
-      (car hits))))
+      (car hits)))))
+
+(declare-function excal--frame-name-bounds "excal-frame-render")
+
+(defun excal--hit-frame-name (scene-xy)
+  "Return the topmost unlocked frame whose name label is at SCENE-XY."
+  (when (fboundp 'excal--frame-name-bounds)
+    (let ((tolerance (/ (excal--hit-threshold '((strokeWidth . 1))) 1.0)))
+      (cl-find-if (lambda (e)
+                    (and (member (excal--get e 'type) '("frame" "magicframe"))
+                         (not (excal--get e 'locked))
+                         (pcase-let ((`(,x1 ,y1 ,x2 ,y2) (excal--frame-name-bounds e)))
+                           (and (<= (- x1 tolerance) (car scene-xy) (+ x2 tolerance))
+                                (<= (- y1 tolerance) (cdr scene-xy) (+ y2 tolerance))))))
+                  (reverse (excal--live-elements))))))
 
 (provide 'excal-hit)
 ;;; excal-hit.el ends here

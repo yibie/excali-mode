@@ -10,6 +10,7 @@
 
 (require 'excal-core)
 (require 'excal-text)
+(require 'excal-image)
 
 (declare-function excal--update-pointer "excal-edit")
 (declare-function excal--overlay-natives "excal-handles")
@@ -58,7 +59,9 @@
                       (excal--get element 'startArrowhead)
                       (excal--get element 'endArrowhead)
                       (excal--native-shape-extras element)
-                      (excal--native-text-extras element))
+                      (excal--native-text-extras element)
+                      ;; Optional last slot, see `SLOT_MEDIA_EXTRAS'.
+                      (excal--native-media-extras element))
               excal--native-cache))))
     (when (fboundp 'excal--erase-opacity-for)
       ;; Elements marked by the eraser fade; recomputed every frame.
@@ -638,9 +641,10 @@ The step is shown as a preview; see `excal--render-preview'."
   (message "Canvas pixel scale %.1fx (%dx%d device px)"
            excal--pixel-scale (car excal--canvas-size) (cdr excal--canvas-size)))
 
-(defun excal-export-png (file)
-  "Write the current canvas pixels to FILE."
-  (interactive "FExport PNG: ")
+(defun excal-write-framebuffer-png (file)
+  "Write the current framebuffer pixels to FILE, for debugging.
+See `excal-export-png' for exporting the scene."
+  (interactive "FWrite framebuffer PNG: ")
   (excal-native-fb-write-png excal--fb (expand-file-name file)))
 
 (provide 'excal-view)

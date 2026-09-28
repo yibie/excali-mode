@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "excal-export.h"
+#include "excal-frame.h"
+#include "excal-image.h"
 #include "excal-preview.h"
 #include "excal-render.h"
 #include "excal-text.h"
@@ -46,6 +49,8 @@ enum {
 	SLOT_SHAPE_EXTRAS, /* [KEY VALUE ...], see `excal--native-shape-extras'.  */
 	SLOT_TEXT_EXTRAS,  /* [KEY VALUE ...], see `excal--native-text-extras'.  */
 	SLOT_COUNT,
+	/* Optional: vectors may stop before it.  */
+	SLOT_MEDIA_EXTRAS = SLOT_COUNT, /* See `excal--native-media-extras'.  */
 };
 
 static emacs_value Qnil, Qt, Qinteger, Qfloat, Qstring, Qvector, Quser_ptr;
@@ -126,6 +131,36 @@ static void read_text_extras(emacs_env *env, emacs_value extras,
 	}
 }
 
+/* Read the image and frame extras, see `excal--native-media-extras'.  */
+static void read_media_extras(emacs_env *env, emacs_value extras,
+                              ExcalElement *e)
+{
+	ExcalMedia *m = &e->media;
+	m->scale[0] = m->scale[1] = 1;
+	if (!type_is(env, extras, Qvector))
+		return;
+	m->id = get_extra_string(env, extras, "id");
+	m->frame_id = get_extra_string(env, extras, "frame-id");
+	m->grouped = env->is_not_nil(env, get_extra(env, extras, "grouped"));
+	m->magic = env->is_not_nil(env, get_extra(env, extras, "magic"));
+	m->name = get_extra_string(env, extras, "name");
+	m->file_id = get_extra_string(env, extras, "file-id");
+	m->error = env->is_not_nil(env, get_extra(env, extras, "error"));
+	m->radius = get_extra_number(env, extras, "radius", 0);
+	emacs_value scale = get_extra(env, extras, "scale");
+	if (type_is(env, scale, Qvector) && env->vec_size(env, scale) == 2)
+		for (int i = 0; i < 2; ++i)
+			m->scale[i] = get_number(
+			        env, env->vec_get(env, scale, i), 1);
+	emacs_value crop = get_extra(env, extras, "crop");
+	if (type_is(env, crop, Qvector) && env->vec_size(env, crop) == 6) {
+		m->has_crop = true;
+		for (int i = 0; i < 6; ++i)
+			m->crop[i] =
+			        get_number(env, env->vec_get(env, crop, i), 0);
+	}
+}
+
 static ExcalType parse_type(const char *name)
 {
 	static const struct {
@@ -140,6 +175,8 @@ static ExcalType parse_type(const char *name)
 	        {"ov-handle", EXCAL_OV_HANDLE}, {"ov-circle", EXCAL_OV_CIRCLE},
 	        {"ov-ellipse", EXCAL_OV_ELLIPSE}, {"ov-diamond", EXCAL_OV_DIAMOND},
 	        {"ov-poly", EXCAL_OV_POLY},       {"ov-grid", EXCAL_OV_GRID},
+	        {"image", EXCAL_IMAGE},           {"frame", EXCAL_FRAME},
+	        {"magicframe", EXCAL_FRAME},
 	};
 	if (name)
 		for (size_t i = 0; i < sizeof table / sizeof table[0]; ++i)
@@ -188,6 +225,7 @@ static void read_shape_extras(emacs_env *env, emacs_value extras,
 				        env, env->vec_get(env, pressures, i), NAN);
 		}
 	}
+	excal_media_free(&e->media);
 }
 
 static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
@@ -233,6 +271,11 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	read_text_extras(env, SLOT(SLOT_TEXT_EXTRAS), e);
 	read_shape_extras(env, SLOT(SLOT_SHAPE_EXTRAS), e);
 	e->sticky_footer = get_extra_string(env, SLOT(SLOT_SHAPE_EXTRAS), "stickyFooter");
+	read_media_extras(env,
+	                  env->vec_size(env, vec) > SLOT_MEDIA_EXTRAS
+	                          ? SLOT(SLOT_MEDIA_EXTRAS)
+	                          : Qnil,
+	                  e);
 #undef SLOT
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }
@@ -930,6 +973,260 @@ static void bind_range(emacs_env *env, const char *name,
 	             (emacs_value[]){env->intern(env, name), function});
 }
 
+/* Images, frames and export; see excal-image.c, excal-frame.c and
+   excal-export.c.  */
+
+/* Return the bytes of string VALUE (unibyte strings keep raw bytes);
+   set *LEN, which excludes the terminating NUL.  */
+static char *get_bytes(emacs_env *env, emacs_value value, size_t *len)
+{
+	if (!type_is(env, value, Qstring))
+		return NULL;
+	ptrdiff_t size = 0;
+	env->copy_string_contents(env, value, NULL, &size);
+	char *buffer = malloc(size > 0 ? size : 1);
+	if (buffer && !env->copy_string_contents(env, value, buffer, &size)) {
+		free(buffer);
+		return NULL;
+	}
+	*len = size > 0 ? (size_t)size - 1 : 0;
+	return buffer;
+}
+
+static emacs_value image_info_vector(emacs_env *env, const char *id)
+{
+	double w, h;
+	const char *mime;
+	if (!excal_image_info(id, &w, &h, &mime))
+		return Qnil;
+	return env->funcall(
+	        env, env->intern(env, "vector"), 3,
+	        (emacs_value[]){env->make_float(env, w),
+	                        env->make_float(env, h),
+	                        env->make_string(env, mime,
+	                                         (ptrdiff_t)strlen(mime))});
+}
+
+/* (excal-native-image-register FILE-ID DATA-URL) */
+static emacs_value Fexcal_native_image_register(emacs_env *env,
+                                                ptrdiff_t nargs,
+                                                emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *id = get_string(env, args[0]);
+	size_t len = 0;
+	char *url = get_bytes(env, args[1], &len);
+	const char *error = NULL;
+	bool ok = id && url && excal_image_register(id, url, len, &error);
+	emacs_value result = ok ? image_info_vector(env, id) : Qnil;
+	free(id);
+	free(url);
+	return result;
+}
+
+/* (excal-native-image-forget FILE-ID) */
+static emacs_value Fexcal_native_image_forget(emacs_env *env, ptrdiff_t nargs,
+                                              emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *id = get_string(env, args[0]);
+	bool ok = id && excal_image_forget(id);
+	free(id);
+	return ok ? Qt : Qnil;
+}
+
+/* (excal-native-image-info FILE-ID) */
+static emacs_value Fexcal_native_image_info(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *id = get_string(env, args[0]);
+	emacs_value result = id ? image_info_vector(env, id) : Qnil;
+	free(id);
+	return result;
+}
+
+/* (excal-native-image-count) */
+static emacs_value Fexcal_native_image_count(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)args;
+	(void)data;
+	return env->make_integer(env, (intmax_t)excal_image_count());
+}
+
+/* (excal-native-image-png FILE-ID MAX-SIZE) */
+static emacs_value Fexcal_native_image_png(emacs_env *env, ptrdiff_t nargs,
+                                           emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *id = get_string(env, args[0]);
+	size_t len = 0;
+	unsigned char *png =
+	        id ? excal_image_png(id, (int)get_number(env, args[1], 0), &len)
+	           : NULL;
+	free(id);
+	if (!png)
+		return Qnil;
+	emacs_value result =
+	        env->make_unibyte_string(env, (const char *)png, (ptrdiff_t)len);
+	free(png);
+	return result;
+}
+
+static ExcalExport export_options(emacs_env *env, emacs_value *args,
+                                  char **background)
+{
+	*background = get_string(env, args[4]);
+	return (ExcalExport){
+	        .x = get_number(env, args[0], 0),
+	        .y = get_number(env, args[1], 0),
+	        .width = get_number(env, args[2], 0),
+	        .height = get_number(env, args[3], 0),
+	        .background = *background,
+	        .clip = env->is_not_nil(env, args[5]),
+	        .outline = env->is_not_nil(env, args[6]),
+	};
+}
+
+/* (excal-native-export-png FILE ELEMENTS X Y WIDTH HEIGHT BACKGROUND CLIP
+   OUTLINE SCALE TEXT) */
+static emacs_value Fexcal_native_export_png(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *path = get_string(env, args[0]);
+	char *background;
+	ExcalExport opts = export_options(env, args + 2, &background);
+	opts.scale = get_number(env, args[9], 1);
+	size_t text_len = 0;
+	char *text = get_bytes(env, args[10], &text_len);
+	size_t count = 0;
+	ExcalElement *elements = read_elements(env, args[1], &count);
+	bool ok = path && elements &&
+	          env->non_local_exit_check(env) == emacs_funcall_exit_return &&
+	          excal_export_png(elements, count, &opts,
+	                           "application/vnd.excalidraw+json",
+	                           (const unsigned char *)text, text_len, path);
+	if (elements)
+		free_elements(elements, count);
+	free(path);
+	free(background);
+	free(text);
+	return ok ? Qt : Qnil;
+}
+
+/* (excal-native-export-svg ELEMENTS X Y WIDTH HEIGHT BACKGROUND CLIP
+   OUTLINE) */
+static emacs_value Fexcal_native_export_svg(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *background;
+	ExcalExport opts = export_options(env, args + 1, &background);
+	opts.scale = 1;
+	size_t count = 0;
+	ExcalElement *elements = read_elements(env, args[0], &count);
+	size_t len = 0;
+	char *svg = elements && env->non_local_exit_check(env) ==
+	                                emacs_funcall_exit_return
+	                    ? excal_export_svg(elements, count, &opts, &len)
+	                    : NULL;
+	if (elements)
+		free_elements(elements, count);
+	free(background);
+	if (!svg)
+		return Qnil;
+	emacs_value result = env->make_string(env, svg, (ptrdiff_t)len);
+	free(svg);
+	return result;
+}
+
+/* zlib for embedded scenes.  */
+static emacs_value zlib_call(emacs_env *env, emacs_value value, bool inflate)
+{
+	size_t len = 0, out_len = 0;
+	char *bytes = get_bytes(env, value, &len);
+	if (!bytes)
+		return Qnil;
+	unsigned char *out =
+	        inflate ? excal_zlib_decompress((unsigned char *)bytes, len,
+	                                        &out_len)
+	                : excal_zlib_compress((unsigned char *)bytes, len,
+	                                      &out_len);
+	free(bytes);
+	if (!out)
+		return Qnil;
+	emacs_value result = env->make_unibyte_string(env, (const char *)out,
+	                                              (ptrdiff_t)out_len);
+	free(out);
+	return result;
+}
+
+/* (excal-native-zlib-compress STRING) */
+static emacs_value Fexcal_native_zlib_compress(emacs_env *env,
+                                               ptrdiff_t nargs,
+                                               emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	return zlib_call(env, args[0], false);
+}
+
+/* (excal-native-zlib-decompress STRING) */
+static emacs_value Fexcal_native_zlib_decompress(emacs_env *env,
+                                                 ptrdiff_t nargs,
+                                                 emacs_value *args,
+                                                 void *data)
+{
+	(void)nargs;
+	(void)data;
+	return zlib_call(env, args[0], true);
+}
+
+/* (excal-native-frame-label TITLE MAX-WIDTH) */
+static emacs_value Fexcal_native_frame_label(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *title = get_string(env, args[0]);
+	if (!title)
+		return Qnil;
+	double width = 0;
+	char *text = excal_frame_label_text(title, get_number(env, args[1], 0),
+	                                    &width);
+	free(title);
+	emacs_value result = env->funcall(
+	        env, env->intern(env, "cons"), 2,
+	        (emacs_value[]){env->make_string(env, text,
+	                                         (ptrdiff_t)strlen(text)),
+	                        env->make_float(env, width)});
+	free(text);
+	return result;
+}
+
+/* (excal-native-fb-pixel FB X Y) */
+static emacs_value Fexcal_native_fb_pixel(emacs_env *env, ptrdiff_t nargs,
+                                          emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	Framebuffer *fb = get_framebuffer(env, args[0]);
+	int x = (int)get_number(env, args[1], -1);
+	int y = (int)get_number(env, args[2], -1);
+	if (!fb || x < 0 || y < 0 || x >= fb->width || y >= fb->height)
+		return Qnil;
+	return env->make_integer(env, fb->pixels[(size_t)y * fb->width + x]);
+}
+
 static void bind(emacs_env *env, const char *name,
                  emacs_value (*fn)(emacs_env *, ptrdiff_t, emacs_value *,
                                    void *),
@@ -1040,6 +1337,47 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "(fn SEED COUNT)");
 	bind(env, "excal-native-fb-write-png", Fexcal_native_fb_write_png, 2,
 	     "Write FB to FILE as PNG.\n\n(fn FB FILE)");
+	bind(env, "excal-native-fb-pixel", Fexcal_native_fb_pixel, 3,
+	     "Return FB's pixel at X, Y as an ARGB integer, or nil.\n\n"
+	     "(fn FB X Y)");
+	bind(env, "excal-native-image-register", Fexcal_native_image_register,
+	     2,
+	     "Decode DATA-URL and cache the image under FILE-ID.\n\n"
+	     "Return [WIDTH HEIGHT MIME] (natural size), or nil if it cannot\n"
+	     "be decoded.\n\n(fn FILE-ID DATA-URL)");
+	bind(env, "excal-native-image-forget", Fexcal_native_image_forget, 1,
+	     "Free the image cached under FILE-ID.\n\n(fn FILE-ID)");
+	bind(env, "excal-native-image-info", Fexcal_native_image_info, 1,
+	     "Return [WIDTH HEIGHT MIME] of the image cached under FILE-ID.\n\n"
+	     "(fn FILE-ID)");
+	bind(env, "excal-native-image-count", Fexcal_native_image_count, 0,
+	     "Return the number of cached images.\n\n(fn)");
+	bind(env, "excal-native-image-png", Fexcal_native_image_png, 2,
+	     "Return raster image FILE-ID as PNG bytes fitting MAX-SIZE.\n\n"
+	     "(fn FILE-ID MAX-SIZE)");
+	bind(env, "excal-native-export-png", Fexcal_native_export_png, 11,
+	     "Render ELEMENTS to the PNG FILE.\n\n"
+	     "X, Y is the scene point at the top-left, WIDTH and HEIGHT the\n"
+	     "size in scene units, BACKGROUND a hex color or nil, CLIP and\n"
+	     "OUTLINE the frame rendering flags, SCALE pixels per scene unit,\n"
+	     "TEXT nil or the bytes of an embedded-scene tEXt chunk.\n\n"
+	     "(fn FILE ELEMENTS X Y WIDTH HEIGHT BACKGROUND CLIP OUTLINE SCALE "
+	     "TEXT)");
+	bind(env, "excal-native-export-svg", Fexcal_native_export_svg, 8,
+	     "Render ELEMENTS as an SVG document string.\n\n"
+	     "Arguments as for `excal-native-export-png'.\n\n"
+	     "(fn ELEMENTS X Y WIDTH HEIGHT BACKGROUND CLIP OUTLINE)");
+	bind(env, "excal-native-zlib-compress", Fexcal_native_zlib_compress, 1,
+	     "Return STRING's bytes zlib-compressed, as a unibyte string.\n\n"
+	     "(fn STRING)");
+	bind(env, "excal-native-zlib-decompress",
+	     Fexcal_native_zlib_decompress, 1,
+	     "Return STRING's zlib data inflated, or nil if invalid.\n\n"
+	     "(fn STRING)");
+	bind(env, "excal-native-frame-label", Fexcal_native_frame_label, 2,
+	     "Return (TEXT . WIDTH): TITLE as a frame label within MAX-WIDTH.\n\n"
+	     "Sizes are screen pixels at the 14px label font.\n\n"
+	     "(fn TITLE MAX-WIDTH)");
 #ifdef EXCAL_HAVE_LAYER
 	bind(env, "excal-native-layer-create", Fexcal_native_layer_create, 4,
 	     "Attach an overlay layer to the Emacs view at screen rectangle.\n\n"

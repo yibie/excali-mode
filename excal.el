@@ -32,6 +32,8 @@
 (require 'excal-frame)
 (require 'excal-erase)
 (require 'excal-library)
+(require 'excal-image)
+(require 'excal-export)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -100,7 +102,7 @@ or deselect."
   "e" (excal--tool-command eraser) "0" (excal--tool-command eraser)
   "f" (excal--tool-command frame)
   "n" (excal--tool-command stickynote)
-  "9" #'excal-not-yet                       ; image
+  "9" #'excal-insert-image
   "k" #'excal-not-yet "b" #'excal-not-yet "i" #'excal-not-yet
   "q" #'excal-toggle-tool-lock
   ;; Style.
@@ -153,6 +155,7 @@ or deselect."
   "s-'" #'excal-toggle-grid "M-s" #'excal-toggle-objects-snap
   "M-D" #'excal-toggle-theme
   "s-s" #'excal-save "C-x C-s" #'excal-save
+  "s-E" #'excal-export-image "C-c C-e" #'excal-export-image
   "C-c C-b" #'excal-cycle-backend
   "C-c C-p" #'excal-toggle-pixel-scale
   "C-c C-r" #'excal--sync-canvas
@@ -202,10 +205,12 @@ see `excal--restore-doc') before anything else sees it."
 
 ;;;###autoload
 (defun excal-open (file)
-  "Open .excalidraw FILE."
+  "Open .excalidraw FILE, or the scene embedded in a PNG or SVG FILE.
+A scene read from an image is saved to a new .excalidraw file."
   (interactive "fExcalidraw file: ")
   (let ((file (expand-file-name file)))
-    (excal--open (excal--read-file file) file
+    (excal--open (excal--read-scene-file file)
+                 (and (excal--scene-file-p file) file)
                  (format "*excal %s*" (file-name-nondirectory file)))))
 
 ;;;###autoload
