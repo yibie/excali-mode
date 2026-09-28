@@ -30,6 +30,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 |-----+--------|
 | =v= =1=, =h=, =r= =2=, =d= =3=, =o= =4=, =a= =5=, =l= =6=, =p= =x= =7=, =t= =8= | select, hand, rectangle, diamond, ellipse, arrow, line, pen, text |
 | =a= again | toggle sharp / round arrows |
+| =f=, =n=, =e= =0= | frame, sticky note, eraser (=e= again: previous tool) |
 | =q= | lock the tool (keep drawing) |
 | drag | create; shift = square / 15° lines, meta = from center |
 | short drag with =a=/=l=, then clicks | multi-point line; click the last point, =RET= or =ESC= to finish |
@@ -47,6 +48,9 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =s-]= =s-[=, =M-s-]= =M-s-[= | forward / backward, front / back |
 | =S-s-=arrows, =M-h= =M-v= | align, distribute |
 | =s-L= | lock / unlock elements |
+| =s-k=, click a link icon | set a link (URL or =?element=ID=), follow it |
+| =s-'=, =M-s= | grid, object snapping (super at the press suppresses/inverts) |
+| =C-c l a=, =C-c l i=, =C-c l b= | library: add selection, insert items, browse |
 | =M-s-c= =M-s-v=, =s-<= =s->= | copy / paste styles, font size |
 | wheel, =C-=wheel / pinch, middle drag | pan, zoom, pan |
 | =s-== =s--= =s-0= (=C-x C-= - 0=), =!= =@= =#= | zoom, zoom to fit all / selection |
@@ -123,6 +127,14 @@ back to system fonts, see =excal-font-families= and
 - =excal-hit.el= — hit testing.
 - =excal-create.el= — drawing tools, click-click lines, tool lock.
 - =excal-actions.el= — flip, align, distribute, lock, styles, zoom to fit.
+- =excal-binding.el= — arrow binding, and =excal--follow= (arrows and
+  labels following moved shapes).
+- =excal-linear.el= — point editor for lines and arrows.
+- =excal-snap.el= — grid mode and object snapping.
+- =excal-frame.el= — frame membership and behavior.
+- =excal-erase.el= — eraser and element links.
+- =excal-library.el= — =.excalidrawlib= library: add, insert, import,
+  export, browse.
 - =excal-edit.el= — pointer, drags, mouse commands, text, grouping, z-order.
 - =excal-history.el= — undo/redo with shared per-element snapshots.
 - =excal-clipboard.el= — copy/cut/paste/duplicate.

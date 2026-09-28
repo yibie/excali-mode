@@ -31,6 +31,7 @@
 (require 'excal-snap)
 (require 'excal-frame)
 (require 'excal-erase)
+(require 'excal-library)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -124,6 +125,8 @@ or deselect."
   "S-s-<left>" #'excal-align-left "S-s-<right>" #'excal-align-right
   "s-L" #'excal-toggle-lock
   "s-k" #'excal-set-link
+  "C-c l a" #'excal-library-add "C-c l i" #'excal-library-insert
+  "C-c l b" #'excal-library-browse
   "s-z" #'excal-undo "s-Z" #'excal-redo "s-y" #'excal-redo
   "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo
   "C-?" #'excal-redo "C-M-_" #'excal-redo
