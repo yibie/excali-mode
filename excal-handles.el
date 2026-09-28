@@ -28,6 +28,7 @@
 (declare-function excal--binding-highlight-overlay "excal-binding")
 (declare-function excal--linear-editor-overlays "excal-linear")
 (declare-function excal--grid-native "excal-snap")
+(declare-function excal--link-icon-overlays "excal-erase")
 (declare-function excal--snap-line-natives "excal-snap")
 (defconst excal--handle-size 8 "Transform handle edge, screen px.")
 (defconst excal--handle-spacing 2 "DEFAULT_TRANSFORM_HANDLE_SPACING, screen px.")
@@ -256,6 +257,8 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
     (when-let* ((highlight (and (fboundp 'excal--binding-highlight-overlay)
                                 (excal--binding-highlight-overlay))))
       (push highlight overlays))
+    (when (fboundp 'excal--link-icon-overlays)
+      (setq overlays (append (excal--link-icon-overlays) overlays)))
     (when (fboundp 'excal--snap-line-natives)
       (setq overlays (append (excal--snap-line-natives) overlays)))
     ;; The grid is drawn below the elements whatever its position here.

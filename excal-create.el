@@ -55,13 +55,13 @@
 ;;;; Finishing
 
 (defun excal--created (element)
-  "Finish creating ELEMENT: select it and leave the tool unless locked.
-Freedraw keeps its tool and selects nothing, as upstream."
-  (unless (equal (excal--get element 'type) "freedraw")
+  "Finish creating ELEMENT: select it and return to the selection tool.
+With the tool locked, the tool stays and nothing is selected; freedraw
+always keeps its tool and selects nothing, as upstream."
+  (unless (or excal--tool-locked (equal (excal--get element 'type) "freedraw"))
     (excal--deselect)
     (excal--select (list element))
-    (unless excal--tool-locked
-      (setq excal--tool 'select))))
+    (setq excal--tool 'select)))
 
 (defun excal--discard (element)
   "Remove ELEMENT, which was never finished, from the scene."
@@ -329,16 +329,24 @@ With the grid on the start snaps to it, unless super is held."
   (setq excal--tool-locked (not excal--tool-locked))
   (message "Tool lock %s" (if excal--tool-locked "on" "off")))
 
+(defvar-local excal--previous-tool 'select
+  "Tool to return to when a toggle tool is chosen again.")
+
 (defun excal-select-tool (tool)
   "Make TOOL current.
 Choosing the arrow tool again cycles the arrow type between sharp and
-round (`currentItemArrowType')."
+round (`currentItemArrowType'); choosing the eraser or hand again goes
+back to the previous tool."
   (when (and (eq tool 'arrow) (eq excal--tool 'arrow))
     (excal-set-style 'arrowType
                      (if (equal (excal--style-value 'arrowType) "round") "sharp" "round"))
     (message "Arrow type: %s" (excal--style-value 'arrowType)))
   (when excal--multi-element (excal-finish-multi-point))
-  (setq excal--tool tool))
+  (if (and (memq tool '(eraser hand)) (eq excal--tool tool))
+      (setq excal--tool excal--previous-tool)
+    (unless (eq tool excal--tool)
+      (setq excal--previous-tool excal--tool))
+    (setq excal--tool tool)))
 
 (provide 'excal-create)
 ;;; excal-create.el ends here

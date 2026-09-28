@@ -30,6 +30,7 @@
 (require 'excal-linear)
 (require 'excal-snap)
 (require 'excal-frame)
+(require 'excal-erase)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -95,7 +96,7 @@ or deselect."
   "p" (excal--tool-command freedraw) "x" (excal--tool-command freedraw)
   "7" (excal--tool-command freedraw)
   "t" (excal--tool-command text) "8" (excal--tool-command text)
-  "e" #'excal-not-yet "0" #'excal-not-yet   ; eraser
+  "e" (excal--tool-command eraser) "0" (excal--tool-command eraser)
   "f" (excal--tool-command frame)
   "n" #'excal-not-yet                       ; sticky note
   "9" #'excal-not-yet                       ; image
@@ -122,6 +123,7 @@ or deselect."
   "S-s-<up>" #'excal-align-top "S-s-<down>" #'excal-align-bottom
   "S-s-<left>" #'excal-align-left "S-s-<right>" #'excal-align-right
   "s-L" #'excal-toggle-lock
+  "s-k" #'excal-set-link
   "s-z" #'excal-undo "s-Z" #'excal-redo "s-y" #'excal-redo
   "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo
   "C-?" #'excal-redo "C-M-_" #'excal-redo

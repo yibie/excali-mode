@@ -13,6 +13,7 @@
 
 (declare-function excal--update-pointer "excal-edit")
 (declare-function excal--overlay-natives "excal-handles")
+(declare-function excal--erase-opacity-for "excal-erase")
 (declare-function excal--text-native-extras "excal-text")
 (declare-function excal-native-fb-copy "excal-module")
 (declare-function excal-native-fb-zoom-preview "excal-module")
@@ -59,6 +60,9 @@
                       (excal--native-shape-extras element)
                       (excal--native-text-extras element))
               excal--native-cache))))
+    (when (fboundp 'excal--erase-opacity-for)
+      ;; Elements marked by the eraser fade; recomputed every frame.
+      (aset native 15 (excal--erase-opacity-for element (excal--get element 'opacity))))
     native))
 
 (defun excal--native-shape-extras (element)

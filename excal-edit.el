@@ -20,6 +20,7 @@
 (require 'excal-linear)
 (require 'excal-snap)
 (require 'excal-frame)
+(require 'excal-erase)
 (require 'excal-index)
 
 (defcustom excal-nudge-step 1
@@ -60,6 +61,7 @@ rotation handle and elements `hand'."
               'hand)
              (t 'arrow))))
     ('hand 'hand)
+    ('eraser 'arrow)
     ('text 'text)
     (_ 'arrow)))
 
@@ -278,6 +280,11 @@ adds to it."
       ((guard excal--multi-element)
        (excal--await-release)
        (excal--multi-click start))
+      ((and 'select (let linked (excal--link-at start)) (guard linked))
+       (excal--await-release)
+       (excal-follow-link linked))
+      ('eraser
+       (excal--erase-drag start (memq 'meta (event-modifiers event))))
       ((and 'select (guard (excal--linear-mouse-down event start))))
       ((and 'select (let handle (excal--handle-at start)) (guard handle))
        (excal--transform-drag handle start shift
