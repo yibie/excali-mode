@@ -16,6 +16,7 @@
 (require 'excal-style)
 (require 'excal-handles)
 (require 'excal-transform)
+(require 'excal-binding)
 
 ;;;; Units of the selection
 
@@ -28,11 +29,12 @@
     (nreverse units)))
 
 (defun excal--move-elements (elements dx dy)
-  "Move ELEMENTS by DX, DY scene units."
+  "Move ELEMENTS by DX, DY scene units, re-routing arrows bound to them."
   (dolist (e elements)
     (excal--put e 'x (float (+ (excal--get e 'x) dx)))
     (excal--put e 'y (float (+ (excal--get e 'y) dy)))
-    (excal--touch e)))
+    (excal--touch e))
+  (excal--update-bound-arrows elements excal--selection))
 
 ;;;; Flip
 
@@ -57,7 +59,8 @@ Text is moved but not mirrored."
                                 (cons (- (* 2 (car old)) (car p)) (cdr p))
                               (cons (car p) (- (* 2 (cdr old)) (cdr p)))))
                           (cons (- (car new) (car old)) (- (cdr new) (cdr old)))
-                          (- (plist-get g :angle)))))))
+                          (- (plist-get g :angle))))))
+      (excal--update-bound-arrows excal--selection excal--selection))
     (excal--render)))
 
 (defun excal-flip-horizontal ()

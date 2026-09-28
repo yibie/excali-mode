@@ -26,6 +26,7 @@
 (require 'excal-style)
 (require 'excal-hit)
 (require 'excal-transform)
+(require 'excal-binding)
 
 (defconst excal--minimum-arrow-size 20
   "MINIMUM_ARROW_SIZE, screen px: shorter linear drags start click-click mode.")
@@ -35,6 +36,15 @@
 
 (defvar-local excal--multi-element nil
   "Line or arrow being drawn click by click; its last point floats.")
+
+(defvar-local excal--new-arrow-start nil
+  "Element the start of the arrow being drawn binds to, or nil.")
+
+(defvar-local excal--binding-hover-since nil
+  "When the arrow end being drawn began hovering `excal--binding-highlight'.")
+
+(defvar-local excal--new-arrow-inside nil
+  "Non-nil when the arrow being drawn binds \"inside\" (Alt at the press).")
 
 (declare-function excal--drag-loop "excal-edit")
 (declare-function excal--insert-text "excal-edit")
@@ -105,6 +115,36 @@ The pointer is projected onto that ray, as `getLockedLinearCursorAlignSize'."
          (len (+ (* dx ux) (* dy uy))))
     (cons (* len ux) (* len uy))))
 
+(defun excal--track-binding (element point)
+  "Highlight what the end of new arrow ELEMENT at POINT would bind to.
+Return the damage of the highlight change.  Lines never bind."
+  (let ((old excal--binding-highlight))
+    (setq excal--binding-highlight
+          (and (equal (excal--get element 'type) "arrow")
+               (excal--binding-candidate point (list element))))
+    (unless (eq old excal--binding-highlight)
+      (setq excal--binding-hover-since (float-time))
+      (excal--elements-damage (delq nil (list old excal--binding-highlight))))))
+
+(defun excal--bind-new-arrow (arrow)
+  "Bind the ends of the new ARROW and snap them to the bound outlines."
+  (setq excal--binding-highlight nil)
+  (when (equal (excal--get arrow 'type) "arrow")
+    (let* ((n (length (excal--get arrow 'points)))
+           (start (excal--arrow-point arrow 0))
+           (end (excal--arrow-point arrow (1- n)))
+           (end-target (excal--binding-candidate end (list arrow))))
+      (when excal--new-arrow-start
+        (excal--bind-end arrow 'start excal--new-arrow-start start excal--new-arrow-inside))
+      (when end-target
+        (excal--bind-end arrow 'end end-target end
+                         (or excal--new-arrow-inside
+                             (and excal--binding-hover-since
+                                  (>= (- (float-time) excal--binding-hover-since)
+                                      excal--bind-mode-timeout)))))
+      (excal--update-arrow arrow)))
+  (setq excal--new-arrow-start nil))
+
 (defun excal--set-last-point (element dx dy)
   "Move ELEMENT's last point to DX, DY relative to its origin."
   (let ((points (copy-sequence (excal--get element 'points))))
@@ -121,11 +161,15 @@ The pointer is projected onto that ray, as `getLockedLinearCursorAlignSize'."
                         (cons 'startBinding :null) (cons 'endBinding :null)
                         (cons 'startArrowhead :null) (cons 'endArrowhead :null))))
 
-(defun excal--create-linear (type start lock-angle)
+(defun excal--create-linear (type start lock-angle &optional inside)
   "Drag out a new line or arrow of TYPE from scene point START.
-LOCK-ANGLE snaps the direction to 15 degrees.  A short drag switches to
+LOCK-ANGLE snaps the direction to 15 degrees; INSIDE binds arrow ends
+inside shapes rather than on their outline.  A short drag switches to
 click-click mode instead of finishing."
+  (setq excal--new-arrow-inside inside excal--binding-hover-since nil)
   (let ((element (excal--new-linear type start)))
+    (setq excal--new-arrow-start (and (equal type "arrow")
+                                      (excal--binding-candidate start (list element))))
     (excal--add-new element)
     (excal--deselect)
     (excal--drag-loop
@@ -133,12 +177,16 @@ click-click mode instead of finishing."
        (let* ((p (excal--event-scene-xy ev))
               (d (cons (- (car p) (car start)) (- (cdr p) (cdr start))))
               (d (if lock-angle (excal--lock-angle (car d) (cdr d)) d)))
-         (excal--with-damage element
-           (excal--set-last-point element (car d) (cdr d))))))
+         (excal--damage-union
+          (excal--with-damage element
+            (excal--set-last-point element (car d) (cdr d)))
+          (excal--track-binding element (cons (+ (car start) (car d))
+                                              (+ (cdr start) (cdr d))))))))
     (let* ((last (aref (excal--get element 'points) 1))
            (length (* excal--zoom (sqrt (+ (expt (aref last 0) 2) (expt (aref last 1) 2))))))
       (if (< length excal--minimum-arrow-size)
           (setq excal--multi-element element)
+        (excal--bind-new-arrow element)
         (excal--created element)))))
 
 (defun excal--multi-point-scene (element index)
@@ -150,10 +198,12 @@ click-click mode instead of finishing."
   "Let the floating point of the element being drawn follow SCENE-XY."
   (let ((element excal--multi-element))
     (excal--render
-     (excal--with-damage element
-       (excal--set-last-point element
-                              (- (car scene-xy) (excal--get element 'x))
-                              (- (cdr scene-xy) (excal--get element 'y)))))))
+     (excal--damage-union
+      (excal--with-damage element
+        (excal--set-last-point element
+                               (- (car scene-xy) (excal--get element 'x))
+                               (- (cdr scene-xy) (excal--get element 'y))))
+      (excal--track-binding element scene-xy)))))
 
 (defun excal--multi-click (scene-xy)
   "Handle a click at SCENE-XY while drawing a line or arrow point by point.
@@ -195,10 +245,12 @@ points is discarded."
     (setq excal--multi-element nil)
     (let ((points (excal--get element 'points)))
       (if (< (length points) 3)
-          (excal--discard element)
+          (progn (setq excal--binding-highlight nil excal--new-arrow-start nil)
+                 (excal--discard element))
         (excal--put element 'points (seq-take points (1- (length points))))
         (excal--linear-extent element)
         (excal--touch element)
+        (excal--bind-new-arrow element)
         (excal--created element)))
     (excal--render)))
 
@@ -240,7 +292,8 @@ points is discarded."
       ((or 'rectangle 'ellipse 'diamond)
        (excal--create-shape (symbol-name tool) start (memq 'shift mods) (memq 'meta mods)))
       ((or 'arrow 'line)
-       (excal--create-linear (symbol-name tool) start (memq 'shift mods)))
+       (excal--create-linear (symbol-name tool) start (memq 'shift mods)
+                             (memq 'meta mods)))
       ('freedraw (excal--create-freedraw start))
       ('text
        (excal--await-release)

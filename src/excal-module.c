@@ -114,6 +114,7 @@ static ExcalType parse_type(const char *name)
 	        {"arrow", EXCAL_ARROW},         {"freedraw", EXCAL_FREEDRAW},
 	        {"text", EXCAL_TEXT},           {"ov-rect", EXCAL_OV_RECT},
 	        {"ov-handle", EXCAL_OV_HANDLE}, {"ov-circle", EXCAL_OV_CIRCLE},
+	        {"ov-ellipse", EXCAL_OV_ELLIPSE}, {"ov-diamond", EXCAL_OV_DIAMOND},
 	};
 	if (name)
 		for (size_t i = 0; i < sizeof table / sizeof table[0]; ++i)

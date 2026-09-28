@@ -20,6 +20,8 @@ typedef enum {
 	EXCAL_OV_RECT,   /* Rotated rectangle outline, optionally filled.  */
 	EXCAL_OV_HANDLE, /* Transform handle: rounded square.  */
 	EXCAL_OV_CIRCLE, /* Rotation handle or linear point.  */
+	EXCAL_OV_ELLIPSE, /* Rotated ellipse outline (binding highlight).  */
+	EXCAL_OV_DIAMOND, /* Rotated diamond outline (binding highlight).  */
 	EXCAL_UNKNOWN,
 } ExcalType;
 

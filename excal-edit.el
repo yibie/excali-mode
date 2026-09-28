@@ -16,6 +16,7 @@
 (require 'excal-transform)
 (require 'excal-hit)
 (require 'excal-create)
+(require 'excal-binding)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -37,31 +38,6 @@ The box is the selection bounds padded like `draw_selection'."
                 (pad (/ 6.0 excal--zoom)))
       (and (<= (- x1 pad) (car scene-xy) (+ x2 pad))
            (<= (- y1 pad) (cdr scene-xy) (+ y2 pad))))))
-
-;;;; Damage helpers
-
-(defun excal--scene-rect-damage (rect)
-  "Return the device-pixel damage covering scene RECT and its outline."
-  (pcase-let ((`(,x1 ,y1 ,x2 ,y2) rect)
-              (scale (* excal--zoom excal--pixel-scale)))
-    (list (- (floor (* scale (+ x1 excal--scroll-x))) 20)
-          (- (floor (* scale (+ y1 excal--scroll-y))) 20)
-          (+ (ceiling (* scale (+ x2 excal--scroll-x))) 20)
-          (+ (ceiling (* scale (+ y2 excal--scroll-y))) 20))))
-
-(defun excal--elements-damage (elements)
-  "Return the damage covering ELEMENTS as currently drawn."
-  (let (damage)
-    (dolist (e elements damage)
-      (setq damage (excal--damage-union damage (excal--device-rect e))))))
-
-(defmacro excal--with-elements-damage (elements &rest body)
-  "Run BODY and return the damage caused by changing ELEMENTS."
-  (declare (indent 1))
-  (let ((els (make-symbol "elements")) (before (make-symbol "before")))
-    `(let* ((,els ,elements) (,before (excal--elements-damage ,els)))
-       ,@body
-       (excal--damage-union ,before (excal--elements-damage ,els)))))
 
 ;;;; Pointer shape
 
@@ -151,21 +127,43 @@ Return the release event, or nil if another event ended the drag."
          'scroll))
      button)))
 
+(defconst excal--dragging-threshold 10
+  "DRAGGING_THRESHOLD: a lone bound arrow must move this far to move.")
+
+(defun excal--with-bound-arrows (elements)
+  "Return ELEMENTS plus the arrows bound to them."
+  (seq-union elements (excal--bound-arrows elements)))
+
 (defun excal--move-drag (start)
-  "Move the selection with the mouse from scene point START."
+  "Move the selection with the mouse from scene point START.
+Arrows bound to moved shapes follow.  A lone bound arrow stays until it
+is dragged past `excal--dragging-threshold', so clicking it does not
+unbind it; moved arrows let go of shapes that stay behind."
   (let* ((elements excal--selection)
+         (affected (excal--with-bound-arrows elements))
          (origins (mapcar (lambda (e) (cons (excal--get e 'x) (excal--get e 'y)))
-                          elements)))
+                          elements))
+         (hold (and (null (cdr elements))
+                    (equal (excal--get (car elements) 'type) "arrow")
+                    (or (excal--get (car elements) 'startBinding)
+                        (excal--get (car elements) 'endBinding))))
+         (moved nil))
     (excal--drag-loop
      (lambda (ev)
        (let* ((p (excal--event-scene-xy ev))
               (dx (- (car p) (car start))) (dy (- (cdr p) (cdr start))))
-         (excal--with-elements-damage elements
-           (cl-mapc (lambda (e origin)
-                      (excal--put e 'x (float (+ (car origin) dx)))
-                      (excal--put e 'y (float (+ (cdr origin) dy)))
-                      (excal--touch e))
-                    elements origins)))))))
+         (when (or moved (not hold)
+                   (> (max (abs dx) (abs dy)) excal--dragging-threshold))
+           (setq moved t)
+           (excal--with-elements-damage affected
+             (cl-mapc (lambda (e origin)
+                        (excal--put e 'x (float (+ (car origin) dx)))
+                        (excal--put e 'y (float (+ (cdr origin) dy)))
+                        (excal--touch e))
+                      elements origins)
+             (excal--update-bound-arrows elements elements))))))
+    (when moved
+      (excal--release-moved-arrows elements))))
 
 (defun excal--handle-reference (target handle)
   "Return the scene point of TARGET's box that HANDLE drags.
@@ -188,7 +186,8 @@ the handle's reference point is kept so the shape does not jump."
   (let* ((target (excal--transform-target))
          (geometries (mapcar (lambda (e) (cons e (excal--snapshot-geometry e)))
                              excal--selection))
-         (elements (mapcar #'car geometries))
+         (selected (mapcar #'car geometries))
+         (elements (excal--with-bound-arrows selected))
          (box (plist-get target :box))
          (reference (and (not (eq handle 'rotation))
                          (excal--handle-reference target handle)))
@@ -209,7 +208,8 @@ the handle's reference point is kept so the shape does not jump."
              (excal--resize-multiple geometries box handle pointer shift alt))
             (t
              (excal--resize-single (caar geometries) (cdar geometries)
-                                   handle pointer shift alt)))))))))
+                                   handle pointer shift alt)))
+           (excal--update-bound-arrows selected selected)))))))
 
 (defun excal--marquee-drag (start add)
   "Select by dragging a box from scene point START.
@@ -412,21 +412,37 @@ restores the original text."
   "Delete the selected elements."
   (interactive)
   (when excal--selection
-    (dolist (e excal--selection)
-      (excal--put e 'isDeleted t)
-      (excal--touch e))
+    (let ((doomed excal--selection))
+      (excal--forget-bindings-to doomed)
+      (dolist (e doomed)
+        (when (equal (excal--get e 'type) "arrow")
+          (excal--unbind-end e 'start)
+          (excal--unbind-end e 'end))
+        (excal--put e 'isDeleted t)
+        (excal--touch e)))
     (excal--deselect)
     (excal--render)))
 
 (defun excal--nudge (dx dy)
   "Move the selection by DX, DY scene units."
   (when excal--selection
-    (excal--render
-     (excal--with-elements-damage excal--selection
-       (dolist (e excal--selection)
-         (excal--put e 'x (float (+ (excal--get e 'x) dx)))
-         (excal--put e 'y (float (+ (excal--get e 'y) dy)))
-         (excal--touch e))))))
+    ;; Arrows bound to shapes outside the selection stay attached and are
+    ;; re-routed instead of moved, as upstream.
+    (let* ((moved (seq-remove
+                   (lambda (e)
+                     (seq-some (lambda (key)
+                                 (when-let* ((b (excal--get e key)))
+                                   (not (memq (excal--element-by-id (alist-get 'elementId b))
+                                              excal--selection))))
+                               '(startBinding endBinding)))
+                   excal--selection)))
+      (excal--render
+       (excal--with-elements-damage (excal--with-bound-arrows excal--selection)
+         (dolist (e moved)
+           (excal--put e 'x (float (+ (excal--get e 'x) dx)))
+           (excal--put e 'y (float (+ (excal--get e 'y) dy)))
+           (excal--touch e))
+         (excal--update-bound-arrows moved moved))))))
 
 (defmacro excal--define-nudge (name dx dy large)
   "Define command NAME nudging the selection by DX, DY steps.

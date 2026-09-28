@@ -448,6 +448,29 @@ which `excal--plan-repaint' detects by itself."
             (- (nth 2 damage) (nth 0 damage))
             (- (nth 3 damage) (nth 1 damage)))))
 
+(defun excal--scene-rect-damage (rect)
+  "Return the device-pixel damage covering scene RECT and its outline."
+  (pcase-let ((`(,x1 ,y1 ,x2 ,y2) rect)
+              (scale (* excal--zoom excal--pixel-scale)))
+    (list (- (floor (* scale (+ x1 excal--scroll-x))) 20)
+          (- (floor (* scale (+ y1 excal--scroll-y))) 20)
+          (+ (ceiling (* scale (+ x2 excal--scroll-x))) 20)
+          (+ (ceiling (* scale (+ y2 excal--scroll-y))) 20))))
+
+(defun excal--elements-damage (elements)
+  "Return the damage covering ELEMENTS as currently drawn."
+  (let (damage)
+    (dolist (e elements damage)
+      (setq damage (excal--damage-union damage (excal--device-rect e))))))
+
+(defmacro excal--with-elements-damage (elements &rest body)
+  "Run BODY and return the damage caused by changing ELEMENTS."
+  (declare (indent 1))
+  (let ((els (make-symbol "elements")) (before (make-symbol "before")))
+    `(let* ((,els ,elements) (,before (excal--elements-damage ,els)))
+       ,@body
+       (excal--damage-union ,before (excal--elements-damage ,els)))))
+
 (defmacro excal--with-damage (element &rest body)
   "Run BODY and return the damage caused by changing ELEMENT."
   (declare (indent 1))

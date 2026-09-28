@@ -24,6 +24,8 @@
 (require 'excal-select)
 
 (defconst excal-selection-color "#6965db" "Color of selection borders and handles.")
+
+(declare-function excal--binding-highlight-overlay "excal-binding")
 (defconst excal--handle-size 8 "Transform handle edge, screen px.")
 (defconst excal--handle-spacing 2 "DEFAULT_TRANSFORM_HANDLE_SPACING, screen px.")
 (defconst excal--rotation-gap 16 "ROTATION_RESIZE_HANDLE_GAP, screen px.")
@@ -263,6 +265,9 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
       (push (excal--ov-box excal--marquee 0 :stroke excal-selection-color
                            :fill "#0000c80a")
             overlays))
+    (when-let* ((highlight (and (fboundp 'excal--binding-highlight-overlay)
+                                (excal--binding-highlight-overlay))))
+      (push highlight overlays))
     (nreverse overlays)))
 
 (provide 'excal-handles)

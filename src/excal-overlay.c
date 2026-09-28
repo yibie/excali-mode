@@ -8,6 +8,8 @@
  *              strokeWidth (px), strokeStyle "solid"/"dashed"/"dotted".
  *   ov-handle  a transform handle square at x, y, width, height.
  *   ov-circle  a circle inscribed in x, y, width, height.
+ *   ov-ellipse, ov-diamond
+ *              outlines inscribed in the rotated rect, like ov-rect.
  */
 
 #include "excal-overlay.h"
@@ -19,7 +21,8 @@
 bool excal_overlay_p(ExcalType type)
 {
 	return type == EXCAL_OV_RECT || type == EXCAL_OV_HANDLE ||
-	       type == EXCAL_OV_CIRCLE;
+	       type == EXCAL_OV_CIRCLE || type == EXCAL_OV_ELLIPSE ||
+	       type == EXCAL_OV_DIAMOND;
 }
 
 /* Set the source to "#rrggbb" or "#rrggbbaa" S; return false for none.  */
@@ -87,6 +90,20 @@ void excal_draw_overlay(cairo_t *cr, const ExcalElement *e, double zoom)
 		break;
 	case EXCAL_OV_CIRCLE:
 		cairo_arc(cr, x + w / 2, y + h / 2, fmin(w, h) / 2, 0, 2 * M_PI);
+		break;
+	case EXCAL_OV_ELLIPSE:
+		cairo_save(cr);
+		cairo_translate(cr, x + w / 2, y + h / 2);
+		cairo_scale(cr, fmax(w / 2, 0.01), fmax(h / 2, 0.01));
+		cairo_arc(cr, 0, 0, 1, 0, 2 * M_PI);
+		cairo_restore(cr);
+		break;
+	case EXCAL_OV_DIAMOND:
+		cairo_move_to(cr, x + w / 2, y);
+		cairo_line_to(cr, x + w, y + h / 2);
+		cairo_line_to(cr, x + w / 2, y + h);
+		cairo_line_to(cr, x, y + h / 2);
+		cairo_close_path(cr);
 		break;
 	default:
 		break;
