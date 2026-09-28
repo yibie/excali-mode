@@ -235,12 +235,13 @@ No dark-mode export yet.
 
 * Known gaps
 
-Not ported: perfect-freehand (pen strokes are smoothed polylines), arrow
-bindings, groups, frame behaviour (membership, the frame tool), image
-cropping and pasting, undo, rotation (rotated elements cannot be
-resized), collaboration.  Frame names are still
-edited in the minibuffer, and an input method's candidate window is not
+Not ported: collaboration, AI / magic frames, embeddables, Mermaid, the
+app shell, and interactive image cropping (a stored =crop= renders).
+Autoshape recognition is a heuristic rather than upstream's
+=convertToShape=.  Frame names, links and library item names are still
+read in the minibuffer, and an input method's candidate window is not
 placed at the caret.  Rough strokes resemble but do not match the web
-renderer pixel for pixel.  Label positions on curved arrows follow the
-curve without roughjs jitter.  Without =make fonts=, text uses system
-fallback fonts, so widths and wrapping differ from the web app.
+renderer pixel for pixel.  Without =make fonts=, text uses system
+fallback fonts, so widths and wrapping differ from the web app.  Native
+pointer shapes need macOS; elsewhere the nearest Emacs =pointer= shape
+stands in.  Linux and Windows builds are cross-compiled but not run.
