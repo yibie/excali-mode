@@ -1,0 +1,7 @@
+build/
+*.so
+*.dylib
+*.dll
+*.dSYM/
+*.elc
+bench.txt
