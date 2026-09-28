@@ -29,10 +29,38 @@ ifeq ($(EMACS_MODULE_INCLUDE),)
 $(error emacs-module.h not found; set EMACS_MODULE_INCLUDE=/path/to/include)
 endif
 
-SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c src/excal-preview.c
-HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h src/excal-preview.h
+SOURCES := src/excal-module.c src/excal-render.c src/excal-text.c src/excal-overlay.c src/excal-preview.c \
+	src/excal-image.c src/excal-frame.c src/excal-export.c
+HEADERS := src/excal-render.h src/excal-text.h src/excal-overlay.h src/excal-layer.h src/excal-preview.h \
+	src/excal-image.h src/excal-frame.h src/excal-export.h
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))
 PACKAGES := cairo pangocairo
+
+# zlib (embedded scenes in exports) is required; not every system ships
+# a zlib.pc.
+ifeq ($(shell $(PKG_CONFIG) --exists zlib && echo yes),yes)
+PACKAGES += zlib
+else
+LDLIBS += -lz
+endif
+
+# Optional image decoders; PNG always works through Cairo.  Set e.g.
+# EXCAL_WITH_RSVG=no to build without one.
+EXCAL_WITH_RSVG ?= yes
+EXCAL_WITH_PIXBUF ?= yes
+EXCAL_WITH_WEBP ?= yes
+ifeq ($(EXCAL_WITH_RSVG)$(shell $(PKG_CONFIG) --exists librsvg-2.0 && echo yes),yesyes)
+PACKAGES += librsvg-2.0
+CPPFLAGS += -DEXCAL_HAVE_RSVG
+endif
+ifeq ($(EXCAL_WITH_PIXBUF)$(shell $(PKG_CONFIG) --exists gdk-pixbuf-2.0 && echo yes),yesyes)
+PACKAGES += gdk-pixbuf-2.0
+CPPFLAGS += -DEXCAL_HAVE_PIXBUF
+endif
+ifeq ($(EXCAL_WITH_WEBP)$(shell $(PKG_CONFIG) --exists libwebp && echo yes),yesyes)
+PACKAGES += libwebp
+CPPFLAGS += -DEXCAL_HAVE_WEBP
+endif
 
 # Fonts in fonts/ are registered with fontconfig when Pango uses it
 # (Linux, BSD, Homebrew on macOS), and with CoreText on macOS.

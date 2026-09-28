@@ -15,6 +15,8 @@ typedef enum {
 	EXCAL_ARROW,
 	EXCAL_FREEDRAW,
 	EXCAL_TEXT,
+	EXCAL_IMAGE,      /* See excal-image.c.  */
+	EXCAL_FRAME,      /* Frame and magicframe; see excal-frame.c.  */
 	/* Editor overlays (selection UI), drawn above all elements; see
 	   excal-overlay.c.  */
 	EXCAL_OV_RECT,   /* Rotated rectangle outline, optionally filled.  */
@@ -26,6 +28,21 @@ typedef enum {
 	EXCAL_OV_GRID,    /* Background grid over the element's box, below all.  */
 	EXCAL_UNKNOWN,
 } ExcalType;
+
+/* Image and frame fields from `excal--native-media-extras'.  */
+typedef struct {
+	char *id;       /* Frame-like elements: their own id.  */
+	char *frame_id; /* Containing frame's id, or NULL.  */
+	bool grouped;   /* The element belongs to a group.  */
+	bool magic;     /* A magicframe.  */
+	char *name;     /* Frame title (name or default).  */
+	char *file_id;  /* Image file id, or NULL.  */
+	bool error;     /* Image status "error".  */
+	double scale[2]; /* Image flip factors, [1 1] by default.  */
+	bool has_crop;
+	double crop[6]; /* x y width height naturalWidth naturalHeight.  */
+	double radius;  /* Image corner radius, 0 when sharp.  */
+} ExcalMedia;
 
 typedef struct {
 	ExcalType type;
@@ -53,6 +70,7 @@ typedef struct {
 	double text_offset; /* Baseline of the first line below y.  */
 	bool has_label_hole; /* Arrow with a bound label.  */
 	double label_hole[4]; /* Hole x, y, width, height in scene units.  */
+	ExcalMedia media; /* Image and frame data, see excal-image.h.  */
 } ExcalElement;
 
 #define EXCAL_MAX_CLIPS 8
@@ -77,6 +95,11 @@ typedef struct {
    elements actually drawn after culling.  */
 size_t excal_render(uint32_t *pixels, const ExcalView *view,
                     const ExcalElement *elements, size_t count);
+
+/* Draw scene element E with CR in scene coordinates (the element pass of
+   `excal_render', without culling or frame clipping).  */
+struct _cairo;
+void excal_draw_element(struct _cairo *cr, const ExcalElement *e);
 
 /* Measure TEXT in scene units like Excalidraw's measureText: the
    width of the widest line, and lines * FONT_SIZE * LINE_HEIGHT.  */

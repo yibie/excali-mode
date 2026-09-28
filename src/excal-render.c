@@ -6,6 +6,8 @@
  */
 
 #include "excal-render.h"
+#include "excal-frame.h"
+#include "excal-image.h"
 #include "excal-overlay.h"
 #include "excal-text.h"
 
@@ -595,6 +597,12 @@ static void draw_element(cairo_t *cr, const ExcalElement *e)
 	case EXCAL_TEXT:
 		excal_draw_text(cr, e, stroke.r, stroke.g, stroke.b, stroke.a);
 		break;
+	case EXCAL_IMAGE:
+		excal_draw_image(cr, e);
+		break;
+	case EXCAL_FRAME:
+		excal_draw_frame(cr, e);
+		break;
 	default:
 		break;
 	}
@@ -604,6 +612,11 @@ static void draw_element(cairo_t *cr, const ExcalElement *e)
 		cairo_paint_with_alpha(cr, fmax(e->opacity, 0) / 100.0);
 	}
 	cairo_restore(cr);
+}
+
+void excal_draw_element(cairo_t *cr, const ExcalElement *e)
+{
+	draw_element(cr, e);
 }
 
 /* Unrotated scene-space extent of E: its box, or its points.  */
@@ -688,6 +701,8 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 			                view->pixel_scale);
 	bool *visible = calloc(count ? count : 1, sizeof *visible);
 	size_t drawn = 0;
+	excal_frame_begin_pass(elements, count,
+	                       &(ExcalFrameConfig){view->zoom, true, true, true});
 	for (size_t i = 0; i < count; ++i) {
 		double x1, y1, x2, y2;
 		element_bounds(&elements[i], &x1, &y1, &x2, &y2);
@@ -695,10 +710,15 @@ size_t excal_render(uint32_t *pixels, const ExcalView *view,
 			visible[i] = x2 >= sx1[r] && x1 <= sx2[r] &&
 			             y2 >= sy1[r] && y1 <= sy2[r];
 		if (visible[i]) {
-			draw_element(cr, &elements[i]);
+			ExcalElement scratch;
+			const ExcalElement *e =
+			        excal_frame_clip_begin(cr, &elements[i], &scratch);
+			draw_element(cr, e);
+			excal_frame_clip_end(cr);
 			++drawn;
 		}
 	}
+	excal_frame_end_pass();
 	/* Editor overlays go on top of every element.  */
 	for (size_t i = 0; i < count; ++i)
 		if (visible[i] && excal_overlay_p(elements[i].type))
