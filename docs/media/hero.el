@@ -122,7 +122,7 @@
     ;; 1. Draw a rectangle and label it.
     (setf (alist-get 'backgroundColor excal--current-style) "#a5d8ff")
     (let ((root (excal--apply-current-style
-                 (excal--make-element "rectangle" 40 180 (cons 'roundness '((type . 3)))))))
+                 (excal--make-element "rectangle" 40 80 (cons 'roundness '((type . 3)))))))
       (excal--add-new root)
       (dotimes (i 18)
         (let ((s (hero--ease (/ (1+ i) 18.0))))
