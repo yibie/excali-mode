@@ -29,6 +29,7 @@
 (require 'excal-actions)
 (require 'excal-linear)
 (require 'excal-snap)
+(require 'excal-frame)
 (require 'excal-bench)
 
 ;;;; Keys
@@ -56,6 +57,7 @@
   (interactive)
   (let ((single (excal--single-selection)))
     (cond (excal--multi-element (excal-finish-multi-point))
+          ((and single (excal--frame-p single)) (excal-rename-frame))
           ((and single (equal (excal--get single 'type) "line")
                 (not excal--editing-linear))
            (excal-edit-linear))
@@ -94,7 +96,7 @@ or deselect."
   "7" (excal--tool-command freedraw)
   "t" (excal--tool-command text) "8" (excal--tool-command text)
   "e" #'excal-not-yet "0" #'excal-not-yet   ; eraser
-  "f" #'excal-not-yet                       ; frame
+  "f" (excal--tool-command frame)
   "n" #'excal-not-yet                       ; sticky note
   "9" #'excal-not-yet                       ; image
   "k" #'excal-not-yet "b" #'excal-not-yet "i" #'excal-not-yet

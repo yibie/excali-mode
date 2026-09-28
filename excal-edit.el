@@ -19,6 +19,7 @@
 (require 'excal-binding)
 (require 'excal-linear)
 (require 'excal-snap)
+(require 'excal-frame)
 (require 'excal-index)
 
 (defcustom excal-nudge-step 1
@@ -89,6 +90,9 @@ cache nor the canvas pixels."
 
 ;;;; Dragging
 
+(defvar excal--last-release nil
+  "Scene position of the last drag release, as a one-element list.")
+
 (defun excal--drag-loop (on-move &optional button)
   "Track the mouse, calling ON-MOVE with each movement event until release.
 BUTTON is the mouse button being held, `mouse-1' by default.  ON-MOVE
@@ -111,6 +115,7 @@ Return the release event, or nil if another event ended the drag."
                 (redisplay)))
              ((eq (event-basic-type event) button)
               (when pending (excal--render pending))
+              (setq excal--last-release (list (excal--event-scene-xy event)))
               (throw 'done event))
              (t
               (when pending (excal--render pending))
@@ -145,8 +150,9 @@ unbind it; moved arrows let go of shapes that stay behind.  The grid
 snaps the top-left of the moved bounds; object snapping aligns with
 other elements.  SUPER, held at the press, suppresses the grid and
 inverts object snapping."
-  (let* ((elements excal--selection)
-         (top-left (let ((b (excal--elements-bounds elements))) (cons (nth 0 b) (nth 1 b))))
+  (let* ((elements (excal--with-frame-children excal--selection))
+         (top-left (let ((b (excal--elements-bounds excal--selection)))
+                     (cons (nth 0 b) (nth 1 b))))
          (affected (excal--with-bound-arrows elements))
          (origins (mapcar (lambda (e) (cons (excal--get e 'x) (excal--get e 'y)))
                           elements))
@@ -178,7 +184,9 @@ inverts object snapping."
              (excal--follow elements elements))))))
     (setq excal--snap-lines nil)
     (when moved
-      (excal--release-moved-arrows elements))))
+      (excal--release-moved-arrows elements)
+      (when-let* ((release (car excal--last-release)))
+        (excal--update-frame-membership excal--selection release)))))
 
 (defun excal--handle-reference (target handle)
   "Return the scene point of TARGET's box that HANDLE drags.
@@ -227,7 +235,9 @@ the handle's reference point is kept so the shape does not jump."
                                    handle pointer shift alt)))
            (if (eq handle 'rotation)
                (excal--follow selected selected)
-             (excal--follow selected selected handle shift alt))))))))
+             (excal--follow selected selected handle shift alt))))))
+    (unless (eq handle 'rotation)
+      (excal--update-resized-frames (seq-filter #'excal--frame-p selected)))))
 
 (defun excal--marquee-drag (start add)
   "Select by dragging a box from scene point START.
@@ -528,16 +538,19 @@ Changes are previewed on the canvas; a shape without a label gets one."
   (if (and excal--editing-linear excal--selected-points)
       (excal-delete-points)
    (when excal--selection
-    ;; Labels go with their containers.
-    (let ((doomed (seq-union excal--selection (excal--labels-of excal--selection))))
+    ;; Labels go with their containers; frame children are released.
+    (let ((doomed (seq-union excal--selection (excal--labels-of excal--selection)))
+          (released (excal--release-frame-children
+                     (seq-filter #'excal--frame-p excal--selection))))
       (excal--forget-bindings-to doomed)
       (dolist (e doomed)
         (when (equal (excal--get e 'type) "arrow")
           (excal--unbind-end e 'start)
           (excal--unbind-end e 'end))
         (excal--put e 'isDeleted t)
-        (excal--touch e)))
-    (excal--deselect)
+        (excal--touch e))
+      (excal--deselect)
+      (excal--select (seq-remove (lambda (e) (memq e doomed)) released)))
     (excal--render))))
 
 (defun excal--nudge (dx dy)
@@ -553,8 +566,9 @@ Changes are previewed on the canvas; a shape without a label gets one."
                                               excal--selection))))
                                '(startBinding endBinding)))
                    excal--selection)))
+      (setq moved (excal--with-frame-children moved))
       (excal--render
-       (excal--with-elements-damage (excal--with-bound-arrows excal--selection)
+       (excal--with-elements-damage (excal--with-bound-arrows moved)
          (dolist (e moved)
            (excal--put e 'x (float (+ (excal--get e 'x) dx)))
            (excal--put e 'y (float (+ (excal--get e 'y) dy)))

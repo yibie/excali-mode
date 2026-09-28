@@ -91,10 +91,16 @@ edited, the group just inside it."
 
 ;;;; Changing the selection
 
+(declare-function excal--drop-frame-children "excal-frame")
+
 (defun excal--select (elements &optional add)
   "Select ELEMENTS, keeping the current selection when ADD is non-nil.
-The selection is kept in z-order and without duplicates."
-  (let ((wanted (append (and add excal--selection) elements)))
+The selection is kept in z-order and without duplicates, and never holds
+a frame together with its children."
+  (let* ((wanted (append (and add excal--selection) elements))
+         (wanted (if (fboundp 'excal--drop-frame-children)
+                     (excal--drop-frame-children wanted)
+                   wanted)))
     (setq excal--selection
           (seq-filter (lambda (e) (memq e wanted)) (excal--live-elements)))))
 

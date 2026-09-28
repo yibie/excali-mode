@@ -17,6 +17,7 @@
 (require 'excal-handles)
 (require 'excal-transform)
 (require 'excal-binding)
+(require 'excal-frame)
 
 ;;;; Units of the selection
 
@@ -29,7 +30,8 @@
     (nreverse units)))
 
 (defun excal--move-elements (elements dx dy)
-  "Move ELEMENTS by DX, DY scene units, re-routing arrows bound to them."
+  "Move ELEMENTS and their frame children by DX, DY, re-routing arrows."
+  (setq elements (excal--with-frame-children elements))
   (dolist (e elements)
     (excal--put e 'x (float (+ (excal--get e 'x) dx)))
     (excal--put e 'y (float (+ (excal--get e 'y) dy)))

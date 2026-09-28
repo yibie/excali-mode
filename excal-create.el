@@ -28,6 +28,7 @@
 (require 'excal-transform)
 (require 'excal-binding)
 (require 'excal-snap)
+(require 'excal-frame)
 
 (defconst excal--minimum-arrow-size 20
   "MINIMUM_ARROW_SIZE, screen px: shorter linear drags start click-click mode.")
@@ -84,9 +85,12 @@ SQUARE makes width and height equal; FROM-CENTER grows about SX,SY."
 
 (defun excal--create-shape (type start square from-center)
   "Drag out a new shape of TYPE from scene point START.
-See `excal--drag-box' for SQUARE and FROM-CENTER."
-  (let ((element (excal--apply-current-style
-                  (excal--make-element type (car start) (cdr start)))))
+See `excal--drag-box' for SQUARE and FROM-CENTER.  A new frame adopts
+the elements it encloses."
+  (let ((element (if (equal type "frame")
+                     (excal--new-frame (car start) (cdr start))
+                   (excal--apply-current-style
+                    (excal--make-element type (car start) (cdr start))))))
     (excal--add-new element)
     (excal--deselect)
     (excal--drag-loop
@@ -103,6 +107,8 @@ See `excal--drag-box' for SQUARE and FROM-CENTER."
              (excal--touch element))))))
     (if (and (zerop (excal--get element 'width)) (zerop (excal--get element 'height)))
         (excal--discard element)
+      (when (excal--frame-p element)
+        (excal--adopt-into-frame element))
       (excal--created element))))
 
 ;;;; Lines and arrows
@@ -293,7 +299,7 @@ With the grid on the start snaps to it, unless super is held."
          (start (if (eq tool 'freedraw) start
                   (excal--grid-point start (memq 'super mods)))))
     (pcase tool
-      ((or 'rectangle 'ellipse 'diamond)
+      ((or 'rectangle 'ellipse 'diamond 'frame)
        (excal--create-shape (symbol-name tool) start (memq 'shift mods) (memq 'meta mods)))
       ((or 'arrow 'line)
        (excal--create-linear (symbol-name tool) start (memq 'shift mods)
@@ -302,7 +308,18 @@ With the grid on the start snaps to it, unless super is held."
       ('text
        (excal--await-release)
        (excal--insert-text (car start) (cdr start))
-       (unless excal--tool-locked (setq excal--tool 'select))))))
+       (unless excal--tool-locked (setq excal--tool 'select))))
+    ;; Elements drawn inside a frame belong to it.
+    (unless (eq tool 'frame)
+      (when-let* ((new (car (last excal--elements)))
+                  ((not (excal--get new 'isDeleted)))
+                  ((not (excal--frame-p new)))
+                  ((null (excal--get new 'frameId)))
+                  (frame (excal--frame-at start (list new)))
+                  ((> (length (member frame excal--elements))
+                      (length (member new excal--elements)))))
+        ;; Only an element created by this press, above the frame.
+        (excal--set-frame (list new) frame)))))
 
 ;;;; Tool commands
 
