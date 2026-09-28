@@ -141,7 +141,7 @@ otherwise `excal--overlay-natives' draws one box around everything."
   "Return a native element vector of overlay TYPE covering RECT."
   (pcase-let ((`(,x1 ,y1 ,x2 ,y2) rect))
     (vector type (float x1) (float y1) (float (- x2 x1)) (float (- y2 y1)) 0
-            nil nil nil 1 0 1 nil nil nil 100 0 nil nil nil nil nil nil nil)))
+            nil nil nil 1 0 1 nil nil nil 100 0 nil nil nil nil nil nil nil [] [])))
 
 (defun excal--overlay-natives ()
   "Return native vectors for the editor overlays: selection box, marquee."

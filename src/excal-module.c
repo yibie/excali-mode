@@ -38,6 +38,8 @@ enum {
 	SLOT_ROUNDED,
 	SLOT_START_ARROWHEAD,
 	SLOT_END_ARROWHEAD,
+	SLOT_SHAPE_EXTRAS, /* [KEY VALUE ...], see `excal--native-shape-extras'.  */
+	SLOT_TEXT_EXTRAS,  /* [KEY VALUE ...], see `excal--native-text-extras'.  */
 	SLOT_COUNT,
 };
 
@@ -69,6 +71,36 @@ static char *get_string(emacs_env *env, emacs_value value)
 		return NULL;
 	}
 	return buffer;
+}
+
+/* Return the value stored under KEY in EXTRAS, a vector [KEY VALUE ...]
+   with string keys, or nil.  */
+static emacs_value get_extra(emacs_env *env, emacs_value extras,
+                             const char *key)
+{
+	if (!type_is(env, extras, Qvector))
+		return Qnil;
+	ptrdiff_t n = env->vec_size(env, extras);
+	for (ptrdiff_t i = 0; i + 1 < n; i += 2) {
+		char *name = get_string(env, env->vec_get(env, extras, i));
+		bool match = name && strcmp(name, key) == 0;
+		free(name);
+		if (match)
+			return env->vec_get(env, extras, i + 1);
+	}
+	return Qnil;
+}
+
+__attribute__((unused)) static double get_extra_number(emacs_env *env, emacs_value extras,
+                                      const char *key, double fallback)
+{
+	return get_number(env, get_extra(env, extras, key), fallback);
+}
+
+__attribute__((unused)) static char *get_extra_string(emacs_env *env, emacs_value extras,
+                                     const char *key)
+{
+	return get_string(env, get_extra(env, extras, key));
 }
 
 static ExcalType parse_type(const char *name)

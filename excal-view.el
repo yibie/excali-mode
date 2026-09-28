@@ -54,10 +54,23 @@
                       (excal--get element 'lineHeight)
                       (and (excal--get element 'roundness) t)
                       (excal--get element 'startArrowhead)
-                      (excal--get element 'endArrowhead))
+                      (excal--get element 'endArrowhead)
+                      (excal--native-shape-extras element)
+                      (excal--native-text-extras element))
               excal--native-cache))))
     (aset native 16 (excal--selection-flag element))
     native))
+
+(defun excal--native-shape-extras (_element)
+  "Return extra shape rendering properties of ELEMENT for the module.
+The result is a vector [KEY VALUE ...] with string keys, read in C by
+`get_extra_*' in excal-module.c.  Reserved for shape rendering."
+  [])
+
+(defun excal--native-text-extras (_element)
+  "Return extra text rendering properties of ELEMENT for the module.
+Same format as `excal--native-shape-extras'.  Reserved for text layout."
+  [])
 
 (defun excal--visible-elements ()
   "Return live elements, then editor overlays, as a native vector."

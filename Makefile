@@ -81,8 +81,10 @@ info:
 	@echo "include:   $(EMACS_MODULE_INCLUDE)"
 	@echo "objects:   $(OBJECTS)"
 
+TESTS := $(wildcard test/*-test.el)
+
 test: module
-	$(EMACS) --batch -Q -L . -l ert -l test/excal-test.el -f ert-run-tests-batch-and-exit
+	$(EMACS) --batch -Q -L . -L test -l ert $(addprefix -l ,$(TESTS)) -f ert-run-tests-batch-and-exit
 
 # Needs a graphical session: opens a frame, benchmarks, writes bench.txt.
 bench: module
