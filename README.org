@@ -22,30 +22,36 @@ make bench      # benchmarks backends in a clean GUI Emacs, writes bench.txt
 (excal-open "test/sample.excalidraw")   ; or (excal-new)
 #+end_src
 
-| Key            | Action                                  |
-|----------------+-----------------------------------------|
-| =v r o d a l p t= | select / rectangle / ellipse / diamond / arrow / line / pen / text |
-| drag           | draw with tool; move selection; pan on empty space |
-| drag a handle  | resize the selection (text scales its font) |
-| double-click   | edit text under the pointer, or add text there |
-| wheel, C-wheel | pan, zoom at pointer                    |
-| =e=, =RET=     | edit selected text, previewed live; =C-j= newline, =C-g= cancel |
-| =DEL=          | delete selection                        |
-| === =-= =0=    | zoom in / out / reset                   |
-| =H=            | toggle 1x/2x canvas resolution          |
-| =b=            | cycle presentation backend              |
-| =B=            | benchmark pan, drag and zoom         |
-| =C-x C-s=      | save back to the .excalidraw file       |
-| =S-click=, box drag | add to / toggle the selection; drag on empty space selects by box |
-| double-click a group | enter the group to select its members; =ESC= leaves it |
-| =h=, middle drag | hand tool / pan                       |
-| =C-/=, =C-?= (=s-z=, =s-Z=) | undo, redo                      |
-| =M-w=, =C-w=, =C-y= (=s-c/x/v=) | copy, cut, paste (Excalidraw clipboard format) |
-| =C-c C-d= (=s-d=) | duplicate                             |
-| =C-x h= (=s-a=) | select all                              |
-| =C-c C-g=, =C-c C-u= (=s-g=, =s-G=) | group, ungroup          |
-| =C-c ] [ } {= (=s-] [ } {=) | forward, backward, front, back  |
-| arrows, =S-=arrows | nudge by 1 / 5                        |
+Plain keys follow Excalidraw; its Mod shortcuts use super (Cmd on
+macOS), and the usual Emacs keys work too.  =?= lists everything.
+
+| Key | Action |
+|-----+--------|
+| =v= =1=, =h=, =r= =2=, =d= =3=, =o= =4=, =a= =5=, =l= =6=, =p= =x= =7=, =t= =8= | select, hand, rectangle, diamond, ellipse, arrow, line, pen, text |
+| =a= again | toggle sharp / round arrows |
+| =q= | lock the tool (keep drawing) |
+| drag | create; shift = square / 15° lines, meta = from center |
+| short drag with =a=/=l=, then clicks | multi-point line; click the last point, =RET= or =ESC= to finish |
+| click, =S-click=, box drag | select, toggle, box select (contain) |
+| drag inside the selection box | move |
+| corner handles, border, round handle | resize (shift keeps ratio, meta from center), rotate (shift snaps 15°) |
+| double-click | enter group / edit text / add text |
+| =s=, =g=, =F= | style panel, background, font |
+| =H=, =V= | flip horizontally / vertically |
+| =TAB= | cycle rectangle / diamond / ellipse |
+| arrows, =S-=arrows | nudge 1 / 5 |
+| =s-z= =s-Z= (=C-/= =C-?=) | undo, redo |
+| =s-c= =s-x= =s-v= (=M-w= =C-w= =C-y=) | copy, cut, paste (Excalidraw clipboard) |
+| =s-d=, =s-a=, =s-g=, =s-G= | duplicate, select all, group, ungroup |
+| =s-]= =s-[=, =M-s-]= =M-s-[= | forward / backward, front / back |
+| =S-s-=arrows, =M-h= =M-v= | align, distribute |
+| =s-L= | lock / unlock elements |
+| =M-s-c= =M-s-v=, =s-<= =s->= | copy / paste styles, font size |
+| wheel, =C-=wheel / pinch, middle drag | pan, zoom, pan |
+| =s-== =s--= =s-0= (=C-x C-= - 0=), =!= =@= =#= | zoom, zoom to fit all / selection |
+| =PgUp= =PgDn= (with shift: horizontal) | page |
+| =s-s=, =C-x C-s= | save |
+| =C-c C-b=, =C-c C-p= | cycle backend, toggle 1x/2x (debug) |
 
 * Presentation backends
 
@@ -87,8 +93,12 @@ does the same in a fresh GUI Emacs and writes =bench.txt=.
 - =excal-view.el= — framebuffer, presentation backends, damage, scroll
   reuse, pan/zoom, export.
 - =excal-select.el= — selection model, groups, box selection, overlays.
-- =excal-edit.el= — hit testing, handles, pointer, tools, transforms, text,
-  grouping, z-order.
+- =excal-handles.el= — selection UI geometry, transform handles.
+- =excal-transform.el= — resize / rotate math.
+- =excal-hit.el= — hit testing.
+- =excal-create.el= — drawing tools, click-click lines, tool lock.
+- =excal-actions.el= — flip, align, distribute, lock, styles, zoom to fit.
+- =excal-edit.el= — pointer, drags, mouse commands, text, grouping, z-order.
 - =excal-history.el= — undo/redo with shared per-element snapshots.
 - =excal-clipboard.el= — copy/cut/paste/duplicate.
 - =excal-bench.el= — backend benchmarks.

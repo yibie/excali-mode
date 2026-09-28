@@ -1,0 +1,270 @@
+;;; excal-create.el --- Creating elements with the drawing tools  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Element creation following Excalidraw's pointer handling
+;; (docs/excalidraw-spec.md §3b.1):
+;;
+;; - shapes are dragged out; a plain click creates nothing; shift makes a
+;;   square, meta (Alt) draws from the center;
+;; - lines and arrows follow the pointer with their second point, shift
+;;   locks the angle to 15 degrees; a drag shorter than 20 screen px
+;;   starts click-click mode, where each click commits a point and a
+;;   floating point follows the mouse until the last point is clicked
+;;   again, RET or ESC, or a line closes on its start;
+;; - after creating, the tool returns to selection with the new element
+;;   selected, unless the tool is locked (`q'); freedraw stays active.
+;;
+;; Modifiers are read from the press, since Emacs motion events carry
+;; none.
+
+;;; Code:
+
+(require 'excal-core)
+(require 'excal-view)
+(require 'excal-select)
+(require 'excal-style)
+(require 'excal-hit)
+(require 'excal-transform)
+
+(defconst excal--minimum-arrow-size 20
+  "MINIMUM_ARROW_SIZE, screen px: shorter linear drags start click-click mode.")
+
+(defvar-local excal--tool-locked nil
+  "Non-nil keeps the drawing tool active after creating an element.")
+
+(defvar-local excal--multi-element nil
+  "Line or arrow being drawn click by click; its last point floats.")
+
+(declare-function excal--drag-loop "excal-edit")
+(declare-function excal--insert-text "excal-edit")
+(declare-function excal--await-release "excal-edit")
+
+;;;; Finishing
+
+(defun excal--created (element)
+  "Finish creating ELEMENT: select it and leave the tool unless locked.
+Freedraw keeps its tool and selects nothing, as upstream."
+  (unless (equal (excal--get element 'type) "freedraw")
+    (excal--deselect)
+    (excal--select (list element))
+    (unless excal--tool-locked
+      (setq excal--tool 'select))))
+
+(defun excal--discard (element)
+  "Remove ELEMENT, which was never finished, from the scene."
+  (setq excal--elements (delq element excal--elements))
+  (excal--deselect))
+
+(defun excal--add-new (element)
+  "Put the new ELEMENT on top of the scene."
+  (setq excal--elements (append excal--elements (list element))))
+
+;;;; Shapes
+
+(defun excal--drag-box (sx sy px py square from-center)
+  "Return (X Y W H) for a shape dragged from SX,SY to PX,PY.
+SQUARE makes width and height equal; FROM-CENTER grows about SX,SY."
+  (let* ((w (abs (- px sx))) (h (abs (- py sy))))
+    (when square (setq w (max w h) h w))
+    (if from-center
+        (list (- sx w) (- sy h) (* 2 w) (* 2 h))
+      (list (if (< px sx) (- sx w) sx) (if (< py sy) (- sy h) sy) w h))))
+
+(defun excal--create-shape (type start square from-center)
+  "Drag out a new shape of TYPE from scene point START.
+See `excal--drag-box' for SQUARE and FROM-CENTER."
+  (let ((element (excal--apply-current-style
+                  (excal--make-element type (car start) (cdr start)))))
+    (excal--add-new element)
+    (excal--deselect)
+    (excal--drag-loop
+     (lambda (ev)
+       (let ((p (excal--event-scene-xy ev)))
+         (excal--with-damage element
+           (pcase-let ((`(,x ,y ,w ,h) (excal--drag-box (car start) (cdr start)
+                                                        (car p) (cdr p)
+                                                        square from-center)))
+             (excal--put element 'x (float x))
+             (excal--put element 'y (float y))
+             (excal--put element 'width (float w))
+             (excal--put element 'height (float h))
+             (excal--touch element))))))
+    (if (and (zerop (excal--get element 'width)) (zerop (excal--get element 'height)))
+        (excal--discard element)
+      (excal--created element))))
+
+;;;; Lines and arrows
+
+(defun excal--lock-angle (dx dy)
+  "Return DX, DY snapped to the nearest 15-degree direction, as (DX . DY).
+The pointer is projected onto that ray, as `getLockedLinearCursorAlignSize'."
+  (let* ((angle (atan dy dx))
+         (locked (* (round angle excal--shift-locking-angle) excal--shift-locking-angle))
+         (ux (cos locked)) (uy (sin locked))
+         (len (+ (* dx ux) (* dy uy))))
+    (cons (* len ux) (* len uy))))
+
+(defun excal--set-last-point (element dx dy)
+  "Move ELEMENT's last point to DX, DY relative to its origin."
+  (let ((points (copy-sequence (excal--get element 'points))))
+    (aset points (1- (length points)) (vector (float dx) (float dy)))
+    (excal--put element 'points points)
+    (excal--linear-extent element)
+    (excal--touch element)))
+
+(defun excal--new-linear (type start)
+  "Return a new line or arrow of TYPE starting at scene point START."
+  (excal--apply-current-style
+   (excal--make-element type (car start) (cdr start)
+                        (cons 'points (vector [0.0 0.0] [0.0 0.0]))
+                        (cons 'startBinding :null) (cons 'endBinding :null)
+                        (cons 'startArrowhead :null) (cons 'endArrowhead :null))))
+
+(defun excal--create-linear (type start lock-angle)
+  "Drag out a new line or arrow of TYPE from scene point START.
+LOCK-ANGLE snaps the direction to 15 degrees.  A short drag switches to
+click-click mode instead of finishing."
+  (let ((element (excal--new-linear type start)))
+    (excal--add-new element)
+    (excal--deselect)
+    (excal--drag-loop
+     (lambda (ev)
+       (let* ((p (excal--event-scene-xy ev))
+              (d (cons (- (car p) (car start)) (- (cdr p) (cdr start))))
+              (d (if lock-angle (excal--lock-angle (car d) (cdr d)) d)))
+         (excal--with-damage element
+           (excal--set-last-point element (car d) (cdr d))))))
+    (let* ((last (aref (excal--get element 'points) 1))
+           (length (* excal--zoom (sqrt (+ (expt (aref last 0) 2) (expt (aref last 1) 2))))))
+      (if (< length excal--minimum-arrow-size)
+          (setq excal--multi-element element)
+        (excal--created element)))))
+
+(defun excal--multi-point-scene (element index)
+  "Return ELEMENT's point INDEX in scene coordinates."
+  (let ((p (aref (excal--get element 'points) index)))
+    (cons (+ (excal--get element 'x) (aref p 0)) (+ (excal--get element 'y) (aref p 1)))))
+
+(defun excal--multi-move (scene-xy)
+  "Let the floating point of the element being drawn follow SCENE-XY."
+  (let ((element excal--multi-element))
+    (excal--render
+     (excal--with-damage element
+       (excal--set-last-point element
+                              (- (car scene-xy) (excal--get element 'x))
+                              (- (cdr scene-xy) (excal--get element 'y)))))))
+
+(defun excal--multi-click (scene-xy)
+  "Handle a click at SCENE-XY while drawing a line or arrow point by point.
+Clicking the last committed point again finishes; a line whose new point
+lands on its start closes and finishes; otherwise the point is committed
+and a new floating point follows the mouse."
+  (let* ((element excal--multi-element)
+         (points (excal--get element 'points))
+         (n (length points))
+         (committed (excal--multi-point-scene element (- n 2)))
+         (close (/ (float excal--line-confirm-threshold) excal--zoom))
+         (near (lambda (a b) (<= (sqrt (+ (expt (- (car a) (car b)) 2)
+                                          (expt (- (cdr a) (cdr b)) 2)))
+                                 close))))
+    (cond
+     ((and (> n 2) (funcall near scene-xy committed))
+      (excal-finish-multi-point))
+     ((and (equal (excal--get element 'type) "line") (>= n 3)
+           (funcall near scene-xy (excal--multi-point-scene element 0)))
+      ;; Close the loop exactly on the first point.
+      (excal--set-last-point element 0 0)
+      (setq excal--multi-element nil)
+      (excal--created element))
+     (t
+      (excal--set-last-point element (- (car scene-xy) (excal--get element 'x))
+                             (- (cdr scene-xy) (excal--get element 'y)))
+      (excal--put element 'points
+                  (vconcat (excal--get element 'points)
+                           (vector (copy-sequence (aref (excal--get element 'points)
+                                                        (1- n)))))))))
+  (excal--render))
+
+(defun excal-finish-multi-point ()
+  "Finish the line or arrow being drawn point by point.
+The floating point is dropped; an element left with fewer than two
+points is discarded."
+  (interactive)
+  (when-let* ((element excal--multi-element))
+    (setq excal--multi-element nil)
+    (let ((points (excal--get element 'points)))
+      (if (< (length points) 3)
+          (excal--discard element)
+        (excal--put element 'points (seq-take points (1- (length points))))
+        (excal--linear-extent element)
+        (excal--touch element)
+        (excal--created element)))
+    (excal--render)))
+
+;;;; Freedraw
+
+(defun excal--create-freedraw (start)
+  "Draw a freehand stroke from scene point START."
+  (let* ((points (list [0.0 0.0]))
+         (element (excal--apply-current-style
+                   (excal--make-element
+                    "freedraw" (car start) (cdr start)
+                    (cons 'points (vconcat points))
+                    (cons 'pressures []) (cons 'simulatePressure t)))))
+    (excal--add-new element)
+    (excal--deselect)
+    (excal--drag-loop
+     (lambda (ev)
+       (let* ((p (excal--event-scene-xy ev))
+              (point (vector (- (car p) (car start)) (- (cdr p) (cdr start)))))
+         ;; Motion that does not move adds nothing to the stroke.
+         (unless (equal point (car points))
+           (excal--with-damage element
+             (push point points)
+             (excal--put element 'points (vconcat (reverse points)))
+             (excal--touch element))))))
+    ;; A click leaves a dot: upstream nudges the final point to allow it.
+    (when (null (cdr points))
+      (excal--put element 'points (vector [0.0 0.0] [0.0001 0.0001])))
+    (excal--linear-extent element)
+    (excal--touch element)
+    (excal--created element)))
+
+;;;; Dispatch
+
+(defun excal--create (tool event start)
+  "Create an element with TOOL for the press EVENT at scene point START."
+  (let ((mods (event-modifiers event)))
+    (pcase tool
+      ((or 'rectangle 'ellipse 'diamond)
+       (excal--create-shape (symbol-name tool) start (memq 'shift mods) (memq 'meta mods)))
+      ((or 'arrow 'line)
+       (excal--create-linear (symbol-name tool) start (memq 'shift mods)))
+      ('freedraw (excal--create-freedraw start))
+      ('text
+       (excal--await-release)
+       (excal--insert-text (car start) (cdr start))
+       (unless excal--tool-locked (setq excal--tool 'select))))))
+
+;;;; Tool commands
+
+(defun excal-toggle-tool-lock ()
+  "Toggle keeping the drawing tool after creating an element."
+  (interactive)
+  (setq excal--tool-locked (not excal--tool-locked))
+  (message "Tool lock %s" (if excal--tool-locked "on" "off")))
+
+(defun excal-select-tool (tool)
+  "Make TOOL current.
+Choosing the arrow tool again cycles the arrow type between sharp and
+round (`currentItemArrowType')."
+  (when (and (eq tool 'arrow) (eq excal--tool 'arrow))
+    (excal-set-style 'arrowType
+                     (if (equal (excal--style-value 'arrowType) "round") "sharp" "round"))
+    (message "Arrow type: %s" (excal--style-value 'arrowType)))
+  (when excal--multi-element (excal-finish-multi-point))
+  (setq excal--tool tool))
+
+(provide 'excal-create)
+;;; excal-create.el ends here

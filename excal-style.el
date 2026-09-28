@@ -66,7 +66,10 @@
      :types ("arrow" "line") :choices excal--arrowhead-choices)
     (endArrowhead
      :app currentItemEndArrowhead :default "arrow" :label "End arrowhead"
-     :types ("arrow") :choices excal--arrowhead-choices))
+     :types ("arrow") :choices excal--arrowhead-choices)
+    (arrowType
+     :app currentItemArrowType :default "round" :label "Arrow type"
+     :types nil :choices (("Sharp" . "sharp") ("Round" . "round"))))
   "Style properties: element key and plist of metadata.
 :app is the app-state key saved in .excalidraw files, :types the element
 types the property applies to (t for all), :choices the offered values.")
@@ -129,9 +132,12 @@ the default, so saving an untouched file leaves its app state as it was."
     state))
 
 (defun excal--roundness-for (type)
-  "Return the JSON roundness a new element of TYPE gets, or :null."
-  (if (and (equal (excal--style-value 'roundness) "round")
-           (excal--style-applies-p 'roundness (list (cons 'type type))))
+  "Return the JSON roundness a new element of TYPE gets, or :null.
+Arrows follow the arrow type rather than the edges setting, as upstream."
+  (if (if (equal type "arrow")
+          (equal (excal--style-value 'arrowType) "round")
+        (and (equal (excal--style-value 'roundness) "round")
+             (excal--style-applies-p 'roundness (list (cons 'type type)))))
       ;; 2 is proportional radius (linear elements and legacy shapes),
       ;; 3 adaptive radius (rectangles and diamonds).
       (list (cons 'type (if (member type '("line" "arrow")) 2 3)))
@@ -139,13 +145,11 @@ the default, so saving an untouched file leaves its app state as it was."
 
 (defun excal--apply-current-style (element)
   "Give the new ELEMENT the current style, where properties apply."
+  (excal--put element 'roundness (excal--roundness-for (excal--get element 'type)))
   (pcase-dolist (`(,property . ,_) excal-style-properties)
-    (when (excal--style-applies-p property element)
-      (pcase property
-        ('roundness (excal--put element 'roundness
-                                (excal--roundness-for (excal--get element 'type))))
-        (_ (excal--put element property
-                       (or (excal--style-value property) :null))))))
+    (when (and (not (eq property 'roundness))
+               (excal--style-applies-p property element))
+      (excal--put element property (or (excal--style-value property) :null))))
   (when (equal (excal--get element 'type) "text")
     (excal--measure-text element))
   element)
@@ -244,6 +248,7 @@ the default, so saving an untouched file leaves its app state as it was."
 (excal--define-style-command textAlign)
 (excal--define-style-command startArrowhead)
 (excal--define-style-command endArrowhead)
+(excal--define-style-command arrowType)
 
 ;;;; Panel
 
@@ -272,7 +277,8 @@ the default, so saving an untouched file leaves its app state as it was."
     ("a" excal-style-textAlign :description (lambda () (excal--style-description 'textAlign)) :transient t)]
    ["Arrow"
     ("<" excal-style-startArrowhead :description (lambda () (excal--style-description 'startArrowhead)) :transient t)
-    (">" excal-style-endArrowhead :description (lambda () (excal--style-description 'endArrowhead)) :transient t)]])
+    (">" excal-style-endArrowhead :description (lambda () (excal--style-description 'endArrowhead)) :transient t)
+    ("t" excal-style-arrowType :description (lambda () (excal--style-description 'arrowType)) :transient t)]])
 
 (provide 'excal-style)
 ;;; excal-style.el ends here

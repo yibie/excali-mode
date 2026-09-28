@@ -118,8 +118,9 @@ The result is in z-order."
   (let ((units nil))
     (dolist (element (excal--live-elements))
       ;; Bound text is never selected on its own; it follows its container.
-      (unless (and (equal (excal--get element 'type) "text")
-                   (stringp (excal--get element 'containerId)))
+      (unless (or (excal--get element 'locked)
+                  (and (equal (excal--get element 'type) "text")
+                       (stringp (excal--get element 'containerId))))
        (let ((unit (excal--unit element)))
         (unless (assoc unit units)
           (push (cons unit (excal--inside-p (excal--elements-bounds unit) rect))

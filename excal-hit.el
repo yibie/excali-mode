@@ -172,7 +172,9 @@ topmost one must also pass half the threshold, as upstream does, so a
 stroke right next to another element does not steal the press."
   (let ((hits nil))
     (dolist (e (reverse (excal--live-elements)))
-      (when (excal--hit-element-p e scene-xy)
+      ;; Locked elements cannot be picked; a press on them selects by box.
+      (when (and (not (excal--get e 'locked))
+                 (excal--hit-element-p e scene-xy))
         (push (or (excal--hit-container e) e) hits)))
     (setq hits (delete-dups (nreverse hits)))
     (if (and (cdr hits)

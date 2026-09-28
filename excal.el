@@ -22,17 +22,46 @@
 (require 'excal-edit)
 (require 'excal-history)
 (require 'excal-clipboard)
+(require 'excal-create)
+(require 'excal-actions)
 (require 'excal-bench)
+
+;;;; Keys
+;;
+;; Plain keys follow Excalidraw.  Its Mod (Cmd on macOS) shortcuts are
+;; bound with the super modifier, which is Cmd in the NS port; the
+;; familiar Emacs keys (C-/, M-w, C-y, C-x C-s, ...) work as well.
 
 (defmacro excal--tool-command (tool)
   "Return a command selecting TOOL."
   `(lambda ()
+     ,(format "Select the %s tool." tool)
      (interactive)
-     (setq excal--tool ',tool)
+     (excal-select-tool ',tool)
      (excal--update-pointer)
-     (message "Tool: %s" ',tool)))
+     (message "Tool: %s" excal--tool)))
+
+(defun excal-not-yet ()
+  "Report that this Excalidraw tool is not ported yet."
+  (interactive)
+  (message "%s: not available yet" (key-description (this-command-keys))))
+
+(defun excal-return ()
+  "Finish drawing points, or edit the selected text."
+  (interactive)
+  (if excal--multi-element
+      (excal-finish-multi-point)
+    (excal-edit-text)))
+
+(defun excal-escape-dwim ()
+  "Finish drawing points, or leave the entered group, or deselect."
+  (interactive)
+  (if excal--multi-element
+      (excal-finish-multi-point)
+    (excal-escape)))
 
 (defvar-keymap excal-mode-map
+  ;; Mouse.
   "<down-mouse-1>" #'excal-mouse-down
   "S-<down-mouse-1>" #'excal-mouse-down
   "M-<down-mouse-1>" #'excal-mouse-down
@@ -44,43 +73,71 @@
   "<wheel-left>" #'excal-wheel "<wheel-right>" #'excal-wheel
   "C-<wheel-up>" #'excal-wheel "C-<wheel-down>" #'excal-wheel
   "<pinch>" #'excal-pinch
-  "v" (excal--tool-command select)
-  "r" (excal--tool-command rectangle)
-  "o" (excal--tool-command ellipse)
-  "d" (excal--tool-command diamond)
-  "a" (excal--tool-command arrow)
-  "l" (excal--tool-command line)
-  "p" (excal--tool-command freedraw)
-  "t" (excal--tool-command text)
+  ;; Tools.
   "h" (excal--tool-command hand)
+  "v" (excal--tool-command select) "1" (excal--tool-command select)
+  "r" (excal--tool-command rectangle) "2" (excal--tool-command rectangle)
+  "d" (excal--tool-command diamond) "3" (excal--tool-command diamond)
+  "o" (excal--tool-command ellipse) "4" (excal--tool-command ellipse)
+  "a" (excal--tool-command arrow) "5" (excal--tool-command arrow)
+  "l" (excal--tool-command line) "6" (excal--tool-command line)
+  "p" (excal--tool-command freedraw) "x" (excal--tool-command freedraw)
+  "7" (excal--tool-command freedraw)
+  "t" (excal--tool-command text) "8" (excal--tool-command text)
+  "e" #'excal-not-yet "0" #'excal-not-yet   ; eraser
+  "f" #'excal-not-yet                       ; frame
+  "n" #'excal-not-yet                       ; sticky note
+  "9" #'excal-not-yet                       ; image
+  "k" #'excal-not-yet "b" #'excal-not-yet "i" #'excal-not-yet
+  "q" #'excal-toggle-tool-lock
+  ;; Style.
   "s" #'excal-style
-  "<escape>" #'excal-escape
-  ;; Emacs bindings first, then macOS Command-key equivalents.
-  "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo "s-z" #'excal-undo
-  "C-?" #'excal-redo "C-M-_" #'excal-redo "s-Z" #'excal-redo "s-y" #'excal-redo
-  "M-w" #'excal-copy "s-c" #'excal-copy
-  "C-w" #'excal-cut "s-x" #'excal-cut
-  "C-y" #'excal-paste "s-v" #'excal-paste
-  "C-c C-d" #'excal-duplicate "s-d" #'excal-duplicate
-  "C-x h" #'excal-select-all "s-a" #'excal-select-all
-  "C-c C-g" #'excal-group "s-g" #'excal-group
-  "C-c C-u" #'excal-ungroup "s-G" #'excal-ungroup
-  "C-c ]" #'excal-bring-forward "s-]" #'excal-bring-forward
-  "C-c [" #'excal-send-backward "s-[" #'excal-send-backward
-  "C-c }" #'excal-bring-to-front "s-}" #'excal-bring-to-front
-  "C-c {" #'excal-send-to-back "s-{" #'excal-send-to-back
+  "g" #'excal-style-backgroundColor
+  "F" #'excal-style-fontFamily
+  "s-<" #'excal-decrease-font-size "s->" #'excal-increase-font-size
+  "M-s-c" #'excal-copy-styles "M-s-v" #'excal-paste-styles
+  ;; Editing.
+  "RET" #'excal-return
+  "<escape>" #'excal-escape-dwim
+  "<delete>" #'excal-delete-selected "DEL" #'excal-delete-selected
   "<left>" #'excal-nudge-left "<right>" #'excal-nudge-right
   "<up>" #'excal-nudge-up "<down>" #'excal-nudge-down
   "S-<left>" #'excal-nudge-left-large "S-<right>" #'excal-nudge-right-large
   "S-<up>" #'excal-nudge-up-large "S-<down>" #'excal-nudge-down-large
-  "e" #'excal-edit-text "RET" #'excal-edit-text
-  "<delete>" #'excal-delete-selected "DEL" #'excal-delete-selected
-  "=" #'excal-zoom-in "-" #'excal-zoom-out "0" #'excal-zoom-reset
-  "H" #'excal-toggle-pixel-scale
-  "b" #'excal-cycle-backend
-  "g" #'excal--sync-canvas
-  "C-x C-s" #'excal-save
-  "B" #'excal-bench)
+  "H" #'excal-flip-horizontal "V" #'excal-flip-vertical
+  "TAB" #'excal-convert-type "<backtab>" #'excal-convert-type-backward
+  "M-h" #'excal-distribute-horizontally "M-v" #'excal-distribute-vertically
+  "S-s-<up>" #'excal-align-top "S-s-<down>" #'excal-align-bottom
+  "S-s-<left>" #'excal-align-left "S-s-<right>" #'excal-align-right
+  "s-L" #'excal-toggle-lock
+  "s-z" #'excal-undo "s-Z" #'excal-redo "s-y" #'excal-redo
+  "C-/" #'excal-undo "C-_" #'excal-undo "C-x u" #'excal-undo
+  "C-?" #'excal-redo "C-M-_" #'excal-redo
+  "s-c" #'excal-copy "M-w" #'excal-copy
+  "s-x" #'excal-cut "C-w" #'excal-cut
+  "s-v" #'excal-paste "C-y" #'excal-paste
+  "s-d" #'excal-duplicate "C-c C-d" #'excal-duplicate
+  "s-a" #'excal-select-all "C-x h" #'excal-select-all
+  "s-g" #'excal-group "C-c C-g" #'excal-group
+  "s-G" #'excal-ungroup "C-c C-u" #'excal-ungroup
+  "s-]" #'excal-bring-forward "C-c ]" #'excal-bring-forward
+  "s-[" #'excal-send-backward "C-c [" #'excal-send-backward
+  "M-s-]" #'excal-bring-to-front "C-c }" #'excal-bring-to-front
+  "M-s-[" #'excal-send-to-back "C-c {" #'excal-send-to-back
+  ;; View.
+  "s-=" #'excal-zoom-in "+" #'excal-zoom-in "C-x C-=" #'excal-zoom-in
+  "s--" #'excal-zoom-out "_" #'excal-zoom-out "C-x C--" #'excal-zoom-out
+  "s-0" #'excal-zoom-reset "C-x C-0" #'excal-zoom-reset
+  "!" #'excal-zoom-to-fit "@" #'excal-zoom-to-fit-selection-in-viewport
+  "#" #'excal-zoom-to-fit-selection
+  "<prior>" #'excal-page-up "<next>" #'excal-page-down
+  "S-<prior>" #'excal-page-left "S-<next>" #'excal-page-right
+  ;; Files and debugging.
+  "s-s" #'excal-save "C-x C-s" #'excal-save
+  "C-c C-b" #'excal-cycle-backend
+  "C-c C-p" #'excal-toggle-pixel-scale
+  "C-c C-r" #'excal--sync-canvas
+  "?" #'describe-mode)
 
 (define-derived-mode excal-mode special-mode "Excal"
   "Major mode for editing Excalidraw scenes on a Canvas image."

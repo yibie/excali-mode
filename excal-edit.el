@@ -15,6 +15,7 @@
 (require 'excal-handles)
 (require 'excal-transform)
 (require 'excal-hit)
+(require 'excal-create)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -102,7 +103,10 @@ cache nor the canvas pixels."
   (let ((posn (event-start event)))
     (when (and (eq (posn-window posn) (get-buffer-window (current-buffer)))
                (null (posn-area posn)))
-      (excal--set-pointer (excal--pointer-at (excal--event-scene-xy event))))))
+      (let ((xy (excal--event-scene-xy event)))
+        (when excal--multi-element
+          (excal--multi-move xy))
+        (excal--set-pointer (excal--pointer-at xy))))))
 
 ;;;; Dragging
 
@@ -241,9 +245,11 @@ With shift, clicking toggles elements in the selection and box selection
 adds to it."
   (interactive "e")
   (let* ((start (excal--event-scene-xy event))
-         (shift (memq 'shift (event-modifiers event)))
-         (sx (car start)) (sy (cdr start)))
+         (shift (memq 'shift (event-modifiers event))))
     (pcase excal--tool
+      ((guard excal--multi-element)
+       (excal--await-release)
+       (excal--multi-click start))
       ((and 'select (let handle (excal--handle-at start)) (guard handle))
        (excal--transform-drag handle start shift
                               (memq 'meta (event-modifiers event))))
@@ -278,61 +284,7 @@ adds to it."
            (excal--marquee-drag start shift)))))
       ('hand
        (excal--pan-drag event 'mouse-1))
-      ((and tool (or 'rectangle 'ellipse 'diamond))
-       (let ((element (excal--apply-current-style
-                       (excal--make-element (symbol-name tool) sx sy))))
-         (setq excal--elements (append excal--elements (list element)))
-         (excal--deselect)
-         (excal--select (list element))
-         (excal--drag-loop
-          (lambda (ev)
-            (let ((p (excal--event-scene-xy ev)))
-              (excal--with-damage element
-                (excal--put element 'x (float (min sx (car p))))
-                (excal--put element 'y (float (min sy (cdr p))))
-                (excal--put element 'width (float (abs (- (car p) sx))))
-                (excal--put element 'height (float (abs (- (cdr p) sy))))
-                (excal--touch element)))))
-         (setq excal--tool 'select)))
-      ((and tool (or 'arrow 'line))
-       (let ((element (excal--apply-current-style
-                       (excal--make-element
-                        (symbol-name tool) sx sy
-                        (cons 'points (vector [0.0 0.0] [0.0 0.0]))
-                        (cons 'startBinding :null) (cons 'endBinding :null)
-                        (cons 'startArrowhead :null) (cons 'endArrowhead :null)))))
-         (setq excal--elements (append excal--elements (list element)))
-         (excal--deselect)
-         (excal--select (list element))
-         (excal--drag-loop
-          (lambda (ev)
-            (let ((p (excal--event-scene-xy ev)))
-              (excal--with-damage element
-                (aset (excal--get element 'points) 1
-                      (vector (- (car p) sx) (- (cdr p) sy)))
-                (excal--linear-extent element)
-                (excal--touch element)))))
-         (setq excal--tool 'select)))
-      ('freedraw
-       (let* ((points (list [0.0 0.0]))
-              (element (excal--apply-current-style
-                        (excal--make-element
-                         "freedraw" sx sy (cons 'points (vconcat points))
-                         (cons 'pressures []) (cons 'simulatePressure t)))))
-         (setq excal--elements (append excal--elements (list element)))
-         (excal--deselect)
-         (excal--drag-loop
-          (lambda (ev)
-            (let ((p (excal--event-scene-xy ev)))
-              (excal--with-damage element
-                (push (vector (- (car p) sx) (- (cdr p) sy)) points)
-                (excal--put element 'points (vconcat (reverse points)))
-                (excal--touch element)))))
-         (excal--linear-extent element)))
-      ('text
-       (excal--await-release)
-       (setq excal--tool 'select)
-       (excal--insert-text sx sy)))
+      (tool (excal--create tool event start)))
     (excal--render)
     (excal--update-pointer)))
 
@@ -368,6 +320,9 @@ new text element is created."
          (hit (excal--hit xy))
          (group (and hit (excal--unit-group hit))))
     (cond
+     ;; While drawing points a double click is just another click.
+     (excal--multi-element
+      (excal--multi-click xy))
      (group
       (setq excal--editing-group group
             excal--selection nil)
