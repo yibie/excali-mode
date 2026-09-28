@@ -50,6 +50,8 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =s-d=, =s-a=, =s-g=, =s-G= | duplicate, select all, group, ungroup |
 | =s-]= =s-[=, =M-s-]= =M-s-[= | forward / backward, front / back |
 | =S-s-=arrows, =M-h= =M-v= | align, distribute |
+| =s-=arrows (=C-=arrows) | flowchart: add a linked node; repeat for siblings, any other key keeps them |
+| =M-=arrows | flowchart: go to the linked node that way; repeat to cycle |
 | =s-L= | lock / unlock elements |
 | =s-k=, click a link icon | set a link (URL or =?element=ID=), follow it |
 | =s-'=, =M-s= | grid, object snapping (super at the press suppresses/inverts) |

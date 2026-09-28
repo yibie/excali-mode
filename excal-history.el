@@ -52,12 +52,18 @@
 (defun excal--history-reset ()
   "Start a fresh history whose only entry is the current scene."
   (setq excal--frozen (make-hash-table :test #'equal)
+        excal--history-hold nil
         excal--redo-stack nil
         excal--undo-stack (list (excal--snapshot))))
 
+(defvar-local excal--history-hold nil
+  "Non-nil while a change is pending and must not be recorded yet.
+Flowchart creation holds the history until its nodes are committed.")
+
 (defun excal--commit ()
-  "Record the scene as an undo step if it changed since the last one."
-  (when excal--frozen
+  "Record the scene as an undo step if it changed since the last one.
+Nothing is recorded while `excal--history-hold' is set."
+  (when (and excal--frozen (not excal--history-hold))
     (let ((snapshot (excal--snapshot)))
       (unless (excal--same-scene-p snapshot (car excal--undo-stack))
         (push snapshot excal--undo-stack)

@@ -29,6 +29,7 @@
 (require 'excal-actions)
 (require 'excal-linear)
 (require 'excal-elbow)
+(require 'excal-flowchart)
 (require 'excal-snap)
 (require 'excal-frame)
 (require 'excal-erase)
@@ -126,6 +127,13 @@ or deselect."
   "M-h" #'excal-distribute-horizontally "M-v" #'excal-distribute-vertically
   "S-s-<up>" #'excal-align-top "S-s-<down>" #'excal-align-bottom
   "S-s-<left>" #'excal-align-left "S-s-<right>" #'excal-align-right
+  ;; Flowcharts: Mod+Arrow adds linked nodes, Alt+Arrow walks them.
+  "s-<up>" #'excal-flowchart-up "s-<down>" #'excal-flowchart-down
+  "s-<left>" #'excal-flowchart-left "s-<right>" #'excal-flowchart-right
+  "C-<up>" #'excal-flowchart-up "C-<down>" #'excal-flowchart-down
+  "C-<left>" #'excal-flowchart-left "C-<right>" #'excal-flowchart-right
+  "M-<up>" #'excal-flowchart-navigate-up "M-<down>" #'excal-flowchart-navigate-down
+  "M-<left>" #'excal-flowchart-navigate-left "M-<right>" #'excal-flowchart-navigate-right
   "s-L" #'excal-toggle-lock
   "s-k" #'excal-set-link
   "C-c l a" #'excal-library-add "C-c l i" #'excal-library-insert
@@ -180,6 +188,7 @@ or deselect."
   (add-hook 'window-size-change-functions #'excal--window-size-change)
   (add-hook 'window-buffer-change-functions #'excal--window-size-change)
   ;; One undo step per command that changed the scene.
+  (add-hook 'pre-command-hook #'excal--flowchart-pre-command nil t)
   (add-hook 'post-command-hook #'excal--commit nil t))
 
 (defun excal--open (doc file name)
