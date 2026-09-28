@@ -23,6 +23,7 @@
 (require 'excal-hit)
 (require 'excal-style)
 (require 'excal-edit)
+(require 'excal-text-edit)
 (require 'excal-history)
 (require 'excal-clipboard)
 (require 'excal-create)

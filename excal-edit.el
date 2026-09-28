@@ -23,6 +23,7 @@
 (require 'excal-erase)
 (require 'excal-index)
 (require 'excal-elbow)
+(require 'excal-text-edit)
 
 (defcustom excal-nudge-step 1
   "Scene units moved by the arrow keys."
@@ -53,6 +54,7 @@ Emacs only offers a few portable shapes: there is no diagonal resize,
 rotate, move or crosshair pointer, so corners use `hdrag', and the
 rotation handle and elements `hand'."
   (pcase excal--tool
+    ((guard (and excal--text-edit (excal--text-edit-in-element-p scene-xy))) 'text)
     ('select
      (let ((handle (excal--handle-at scene-xy)))
        (cond ((eq handle 'rotation) 'hand)
@@ -382,8 +384,8 @@ element is created."
       (excal--deselect)
       (excal--select (list (or (excal--container-of hit) hit)))
       (if (excal--container-of hit)
-          (excal--edit-container-text (excal--container-of hit))
-        (excal-edit-text)))
+          (excal--edit-container-text (excal--container-of hit) xy)
+        (excal-edit-text xy)))
      ((let ((single (excal--single-selection)))
         (and (excal--text-container-p single)
              (or (eq single hit) (null hit))))
@@ -397,12 +399,6 @@ element is created."
     (excal--update-pointer)))
 
 ;;;; Text
-
-(defvar-keymap excal-text-minibuffer-map
-  :parent minibuffer-local-map
-  :doc "Keymap for editing text elements in the minibuffer."
-  "C-j" #'newline
-  "S-<return>" #'newline)
 
 (defun excal--container-geometry (container)
   "Snapshot CONTAINER's box so a text edit can restore or shrink it."
@@ -424,60 +420,19 @@ in GEOMETRY, as in Excalidraw's editor."
     (excal--put container 'height (alist-get 'height geometry)))
   (excal--set-text element text))
 
-(defun excal--edit-text-live (element)
-  "Edit ELEMENT's text in the minibuffer, previewing every change.
-Return the confirmed text, or nil when the edit was aborted; an abort
-restores the original text and container size."
-  (let* ((buffer (current-buffer))
-         (container (excal--container-of element))
-         (geometry (excal--container-geometry container))
-         (original (or (excal--get element 'originalText)
-                       (excal--get element 'text) ""))
-         (preview (lambda (&rest _)
-                    (let ((text (minibuffer-contents-no-properties)))
-                      (with-current-buffer buffer
-                        (excal--preview-text element container geometry text)
-                        (excal--render)))))
-         (confirmed nil))
-    (unwind-protect
-        (setq confirmed
-              (minibuffer-with-setup-hook
-                  (lambda () (add-hook 'after-change-functions preview nil t))
-                (read-from-minibuffer "Text (C-j newline, RET done): "
-                                      original excal-text-minibuffer-map)))
-      (with-current-buffer buffer
-        (if confirmed
-            (excal--preview-text element container geometry confirmed)
-          (when container (excal--restore-geometry container geometry))
-          (excal--set-text element original))))
-    confirmed))
-
-(defun excal--finish-text-edit (element text)
-  "Delete ELEMENT if the edit left TEXT blank; return non-nil if kept."
-  (if (and text (not (string-empty-p (string-trim text))))
-      t
-    (if-let* ((container (excal--container-of element)))
-        (excal--remove-bound-text container element)
-      (setq excal--elements (delq element excal--elements)))
-    (excal--deselect)
-    nil))
-
 (defun excal--insert-text (x y)
-  "Create a text element at scene X, Y and edit it in place."
+  "Create a text element at scene X, Y and start editing it."
   (let ((element (excal--apply-current-style (excal--make-text-element x y ""))))
     (setq excal--elements (append excal--elements (list element)))
     (excal--deselect)
     (excal--select (list element))
-    (excal--render)
-    (let ((text (condition-case nil (excal--edit-text-live element) (quit nil))))
-      (excal--finish-text-edit element text))
-    (excal--render)))
+    (excal--text-edit-start element :new t)))
 
-(defun excal--edit-container-text (container)
-  "Edit CONTAINER's label, creating it if CONTAINER has none."
+(defun excal--edit-container-text (container &optional at)
+  "Edit CONTAINER's label, creating it if CONTAINER has none.
+AT is the scene point clicked, where the caret goes in an existing label."
   (let* ((existing (excal--bound-text-of container))
          (bound (alist-get 'boundElements container :null))
-         (geometry (excal--container-geometry container))
          (text (or existing
                    (let ((label (excal--add-bound-text container)))
                      (excal--apply-current-style label)
@@ -488,16 +443,8 @@ restores the original text and container size."
                      (excal--redraw-text label container)))))
     (excal--deselect)
     (excal--select (list container))
-    (excal--render)
-    (let ((result (condition-case nil (excal--edit-text-live text) (quit nil))))
-      (unless (or (and existing (null result)) ; Aborted: keep the label.
-                  (excal--finish-text-edit text result))
-        (unless existing
-          ;; Leave a cancelled new label no trace in the container.
-          (excal--put container 'boundElements bound)
-          (excal--restore-geometry container geometry))
-        (excal--select (list container))))
-    (excal--render)))
+    (excal--text-edit-start text :new (not existing) :bound bound
+                            :at (and existing at))))
 
 (defun excal--binds-text-at-p (container scene-xy)
   "Return non-nil if double-clicking SCENE-XY on CONTAINER edits its label.
@@ -513,18 +460,17 @@ have a label take it anywhere."
         (or (< (- px x1) tolerance) (< (- x2 px) tolerance)
             (< (- py y1) tolerance) (< (- y2 py) tolerance)))))
 
-(defun excal-edit-text ()
+(defun excal-edit-text (&optional at)
   "Edit the selected text element or the label of the selected shape.
-Changes are previewed on the canvas; a shape without a label gets one."
+The text is edited on the canvas; a shape without a label gets one.  AT
+is a scene point to put the caret at."
   (interactive)
   (let ((element (excal--single-selection)))
     (cond
      ((equal (excal--get element 'type) "text")
-      (let ((text (condition-case nil (excal--edit-text-live element) (quit nil))))
-        (when text (excal--finish-text-edit element text)))
-      (excal--render))
+      (excal--text-edit-start element :at at))
      ((excal--text-container-p element)
-      (excal--edit-container-text element)))))
+      (excal--edit-container-text element at)))))
 
 ;;;; Selection commands
 

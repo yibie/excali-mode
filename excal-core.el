@@ -63,6 +63,9 @@
 (defvar-local excal--marquee nil
   "Box-selection rectangle (X1 Y1 X2 Y2) in scene units while dragging.")
 (defvar-local excal--pointer nil "Pointer shape currently shown over the canvas.")
+(defvar-local excal--canvas-start nil
+  "Marker where the canvas text starts, or nil for the buffer start.
+Text being edited on the canvas sits before it; see excal-text-edit.el.")
 (defvar-local excal--rendered-origin nil
   "View origin of the framebuffer's contents; see `excal--view-origin'.")
 (defvar-local excal--pan-remainder '(0.0 . 0.0)
