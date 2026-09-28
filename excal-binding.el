@@ -17,6 +17,7 @@
 (require 'excal-select)
 (require 'excal-handles)
 (require 'excal-hit)
+(require 'excal-text)
 
 (defconst excal--binding-highlight-color "#6abdfc" "BINDING_HIGHLIGHT_RGB.")
 (defconst excal--base-binding-gap 5 "BASE_BINDING_GAP.")
@@ -165,11 +166,6 @@ and FOCUS itself when there is none or the arrow is too short."
 
 ;;;; Binding ends
 
-(defun excal--element-by-id (id)
-  "Return the live element with ID, or nil."
-  (and (stringp id)
-       (cl-find-if (lambda (e) (equal (excal--get e 'id) id)) (excal--live-elements))))
-
 (defun excal--binding-key (end)
   "Return the binding field for END, `start' or `end'."
   (if (eq end 'start) 'startBinding 'endBinding))
@@ -194,7 +190,7 @@ and FOCUS itself when there is none or the arrow is too short."
 (defun excal--unbind-end (arrow end)
   "Remove ARROW's binding at END, if any."
   (when-let* ((binding (excal--get arrow (excal--binding-key end))))
-    (let ((target (excal--element-by-id (alist-get 'elementId binding)))
+    (let ((target (excal--live-element-by-id (alist-get 'elementId binding)))
           (other (excal--get arrow (excal--binding-key (if (eq end 'start) 'end 'start)))))
       (excal--put arrow (excal--binding-key end) :null)
       ;; Keep the back reference while the other end still uses it.
@@ -246,13 +242,13 @@ holding Alt or hovering for `excal--bind-mode-timeout')."
 (defun excal--bound-point (arrow end)
   "Return where ARROW's END belongs given its binding, or nil if unbound."
   (when-let* ((binding (excal--get arrow (excal--binding-key end)))
-              (element (excal--element-by-id (alist-get 'elementId binding))))
+              (element (excal--live-element-by-id (alist-get 'elementId binding))))
     (let* ((focus (excal--global-fixed-point element (alist-get 'fixedPoint binding)))
            (n (length (excal--get arrow 'points)))
            (other-end (if (eq end 'start) 'end 'start))
            (other-binding (excal--get arrow (excal--binding-key other-end)))
            (other-element (and other-binding
-                               (excal--element-by-id (alist-get 'elementId other-binding))))
+                               (excal--live-element-by-id (alist-get 'elementId other-binding))))
            ;; Aim at the other binding's focus for two-point arrows,
            ;; otherwise at the neighbouring point.
            (toward (cond ((and (= n 2) other-element)
@@ -275,7 +271,7 @@ holding Alt or hovering for `excal--bind-mode-timeout')."
     (dolist (e elements)
       (seq-doseq (b (or (excal--get e 'boundElements) []))
         (when (equal (alist-get 'type b) "arrow")
-          (when-let* ((arrow (excal--element-by-id (alist-get 'id b))))
+          (when-let* ((arrow (excal--live-element-by-id (alist-get 'id b))))
             (cl-pushnew arrow arrows)))))
     (nreverse arrows)))
 
@@ -293,18 +289,44 @@ Return the arrows updated."
       (dolist (end '(start end))
         (let ((binding (excal--get arrow (excal--binding-key end))))
           (unless (or (null binding)
-                      (memq (excal--element-by-id (alist-get 'elementId binding)) moved))
+                      (memq (excal--live-element-by-id (alist-get 'elementId binding)) moved))
             (excal--unbind-end arrow end)))))))
 
 (defun excal--forget-bindings-to (elements)
   "Unbind every arrow end bound to ELEMENTS, which are being deleted."
   (dolist (arrow (excal--bound-arrows elements))
     (dolist (end '(start end))
-      (when (memq (excal--element-by-id
+      (when (memq (excal--live-element-by-id
                    (alist-get 'elementId (excal--get arrow (excal--binding-key end))))
                   elements)
         (excal--put arrow (excal--binding-key end) :null)
         (excal--touch arrow)))))
+
+;;;; Keeping dependents in place
+
+(defun excal--labels-of (elements)
+  "Return the live bound text of ELEMENTS."
+  (delq nil (mapcar #'excal--bound-text-of elements)))
+
+(defun excal--dependents (elements)
+  "Return ELEMENTS with the arrows bound to them and every label involved.
+This is everything a change to ELEMENTS may redraw."
+  (let ((with-arrows (seq-union elements (excal--bound-arrows elements))))
+    (seq-union with-arrows (excal--labels-of with-arrows))))
+
+(defun excal--follow (elements &optional moving handle keep-aspect from-center)
+  "Update what depends on ELEMENTS after they moved or changed shape.
+Arrows bound to ELEMENTS are re-routed, except those in MOVING; the
+labels of ELEMENTS and of the re-routed arrows are laid out again, as a
+resize by HANDLE (with KEEP-ASPECT and FROM-CENTER) when HANDLE is given."
+  (let ((arrows (excal--update-bound-arrows elements moving)))
+    (dolist (e elements)
+      (when (excal--bound-text-of e)
+        (if handle
+            (excal--layout-bound-text e handle keep-aspect from-center)
+          (excal--refresh-bound-text e))))
+    (dolist (a arrows)
+      (excal--refresh-bound-text a))))
 
 ;;;; Highlight
 

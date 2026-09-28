@@ -9,9 +9,11 @@
 ;;; Code:
 
 (require 'excal-core)
+(require 'excal-text)
 
 (declare-function excal--update-pointer "excal-edit")
 (declare-function excal--overlay-natives "excal-handles")
+(declare-function excal--text-native-extras "excal-text")
 (declare-function excal-native-fb-copy "excal-module")
 (declare-function excal-native-fb-zoom-preview "excal-module")
 (declare-function excal-native-fb-mean-diff "excal-module")
@@ -65,10 +67,13 @@ The result is a vector [KEY VALUE ...] with string keys, read in C by
 `get_extra_*' in excal-module.c.  Reserved for shape rendering."
   [])
 
-(defun excal--native-text-extras (_element)
+(defun excal--native-text-extras (element)
   "Return extra text rendering properties of ELEMENT for the module.
-Same format as `excal--native-shape-extras'.  Reserved for text layout."
-  [])
+Same format as `excal--native-shape-extras'.  Text elements get
+\"vertical-offset\", the first baseline below their top; arrows with a
+label get \"label-hole\" [X Y W H], the box cut out of the stroke.
+See `excal--text-native-extras' in excal-text.el."
+  (excal--text-native-extras element))
 
 (defun excal--visible-elements ()
   "Return live elements, then editor overlays, as a native vector."

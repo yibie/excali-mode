@@ -48,6 +48,11 @@ typedef struct {
 	double line_height;
 	double opacity; /* 0..100 */
 	bool rounded;
+	/* Text layout from `excal--native-text-extras'.  */
+	bool has_text_offset;
+	double text_offset; /* Baseline of the first line below y.  */
+	bool has_label_hole; /* Arrow with a bound label.  */
+	double label_hole[4]; /* Hole x, y, width, height in scene units.  */
 } ExcalElement;
 
 #define EXCAL_MAX_CLIPS 8
@@ -73,7 +78,8 @@ typedef struct {
 size_t excal_render(uint32_t *pixels, const ExcalView *view,
                     const ExcalElement *elements, size_t count);
 
-/* Measure TEXT in scene units.  */
+/* Measure TEXT in scene units like Excalidraw's measureText: the
+   width of the widest line, and lines * FONT_SIZE * LINE_HEIGHT.  */
 void excal_measure_text(const char *text, double font_size, int font_family,
                         double line_height, double *width, double *height);
 

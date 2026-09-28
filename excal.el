@@ -15,6 +15,7 @@
 (require 'excal-core)
 (require 'excal-index)
 (require 'excal-restore)
+(require 'excal-text)
 (require 'excal-view)
 (require 'excal-select)
 (require 'excal-handles)

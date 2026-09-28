@@ -13,6 +13,7 @@
 (require 'excal-core)
 (require 'excal-view)
 (require 'excal-select)
+(require 'excal-text)
 
 ;;;; Properties
 
@@ -67,6 +68,11 @@
     (textAlign
      :app currentItemTextAlign :default "left" :label "Text align" :types ("text")
      :choices (("Left" . "left") ("Center" . "center") ("Right" . "right")))
+    (verticalAlign
+     ;; Only meaningful for text inside a shape (`shouldAllowVerticalAlign').
+     :app currentItemVerticalAlign :default "top" :label "Vertical align"
+     :types ("text")
+     :choices (("Top" . "top") ("Middle" . "middle") ("Bottom" . "bottom")))
     (startArrowhead
      :app currentItemStartArrowhead :default nil :label "Start arrowhead"
      :types ("arrow" "line") :choices excal--arrowhead-choices)
@@ -211,16 +217,33 @@ Freedraw strokes use a thinner scale (`FREEDRAW_STROKE_WIDTH')."
      (excal--put element 'strokeWidth
                  (excal--stroke-width-for (excal--get element 'type) value)))
     (_ (excal--put element property (if (null value) :null value))))
-  (when (and (equal (excal--get element 'type) "text")
-             (memq property '(fontFamily fontSize)))
-    (excal--measure-text element))
+  (when (equal (excal--get element 'type) "text")
+    (pcase property
+      ((or 'fontFamily 'fontSize) (excal--text-font-changed element property))
+      ((or 'textAlign 'verticalAlign)
+       (when (excal--container-of element) (excal--redraw-text element)))))
   (excal--touch element))
+
+(defconst excal--text-style-properties
+  '(fontFamily fontSize textAlign verticalAlign)
+  "Properties that a selected shape passes on to its label.")
+
+(defun excal--style-targets (property)
+  "Return the elements PROPERTY changes: the selection, plus labels.
+Text properties set on a selected shape apply to its bound text."
+  (append excal--selection
+          (and (memq property excal--text-style-properties)
+               (delq nil (mapcar (lambda (e)
+                                   (and (not (memq (excal--bound-text-of e)
+                                                   excal--selection))
+                                        (excal--bound-text-of e)))
+                                 excal--selection)))))
 
 (defun excal-set-style (property value)
   "Set style PROPERTY to VALUE for the selection and for new elements."
   (setf (alist-get property excal--current-style) value)
   (let ((changed nil))
-    (dolist (e excal--selection)
+    (dolist (e (excal--style-targets property))
       (when (excal--style-applies-p property e)
         (excal--set-element-style e property value)
         (setq changed t)))
@@ -284,6 +307,7 @@ Freedraw strokes use a thinner scale (`FREEDRAW_STROKE_WIDTH')."
 (excal--define-style-command fontFamily)
 (excal--define-style-command fontSize)
 (excal--define-style-command textAlign)
+(excal--define-style-command verticalAlign)
 (excal--define-style-command startArrowhead)
 (excal--define-style-command endArrowhead)
 (excal--define-style-command arrowType)
@@ -312,7 +336,8 @@ Freedraw strokes use a thinner scale (`FREEDRAW_STROKE_WIDTH')."
    ["Text"
     ("F" excal-style-fontFamily :description (lambda () (excal--style-description 'fontFamily)) :transient t)
     ("z" excal-style-fontSize :description (lambda () (excal--style-description 'fontSize)) :transient t)
-    ("a" excal-style-textAlign :description (lambda () (excal--style-description 'textAlign)) :transient t)]
+    ("a" excal-style-textAlign :description (lambda () (excal--style-description 'textAlign)) :transient t)
+    ("A" excal-style-verticalAlign :description (lambda () (excal--style-description 'verticalAlign)) :transient t)]
    ["Arrow"
     ("<" excal-style-startArrowhead :description (lambda () (excal--style-description 'startArrowhead)) :transient t)
     (">" excal-style-endArrowhead :description (lambda () (excal--style-description 'endArrowhead)) :transient t)

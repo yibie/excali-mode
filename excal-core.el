@@ -302,6 +302,19 @@ follow the standard ones."
     (dolist (prop props element)
       (excal--put element (car prop) (cdr prop)))))
 
+(defun excal--rotate-point (point center angle)
+  "Rotate POINT (X . Y) about CENTER by ANGLE radians."
+  (let* ((dx (- (car point) (car center)))
+         (dy (- (cdr point) (cdr center)))
+         (c (cos angle)) (s (sin angle)))
+    (cons (+ (car center) (- (* dx c) (* dy s)))
+          (+ (cdr center) (+ (* dx s) (* dy c))))))
+
+(defun excal--element-by-id (id)
+  "Return the element with ID in the current scene, or nil."
+  (and id (cl-find id excal--elements
+                   :key (lambda (e) (excal--get e 'id)) :test #'equal)))
+
 (defun excal--bounds (element)
   "Return (X1 Y1 X2 Y2) of ELEMENT, ignoring rotation."
   (let ((x (excal--get element 'x)) (y (excal--get element 'y))
@@ -334,34 +347,19 @@ follow the standard ones."
                 (float (- (seq-max (seq-map (lambda (p) (aref p 1)) points))
                           (seq-min (seq-map (lambda (p) (aref p 1)) points)))))))
 
+(declare-function excal--redraw-text "excal-text")
+(declare-function excal--set-text "excal-text")
+(declare-function excal--make-text-element "excal-text")
+
+;; Text layout lives in excal-text.el, which requires this file:
+;; `excal--measure-text' re-lays out a text element (wrapping, container
+;; growth, placement), `excal--set-text' sets its source text, and
+;; `excal--make-text-element' creates one.
+
 (defun excal--measure-text (element)
-  "Set ELEMENT's width and height from its text and font."
-  (let ((size (excal-native-measure-text
-               (or (excal--get element 'text) "")
-               (or (excal--get element 'fontSize) 20)
-               (or (excal--get element 'fontFamily) 5)
-               (or (excal--get element 'lineHeight) 1.25))))
-    (excal--put element 'width (car size))
-    (excal--put element 'height (cdr size))))
-
-(defun excal--set-text (element text)
-  "Set ELEMENT's TEXT and resize it to fit."
-  (excal--put element 'text text)
-  (excal--put element 'originalText text)
-  (excal--measure-text element)
-  (excal--touch element))
-
-(defun excal--make-text-element (x y text)
-  "Return a new text element showing TEXT with its top-left corner at X, Y."
-  (let ((element (excal--make-element
-                  "text" x y
-                  (cons 'text text) (cons 'originalText text)
-                  (cons 'fontSize 20) (cons 'fontFamily 5)
-                  (cons 'textAlign "left") (cons 'verticalAlign "top")
-                  (cons 'containerId :null) (cons 'autoResize t)
-                  (cons 'lineHeight 1.25))))
-    (excal--measure-text element)
-    element))
+  "Recompute text ELEMENT's lines and size from its text and font.
+Bound text also follows and grows its container; see `excal--redraw-text'."
+  (excal--redraw-text element))
 
 (provide 'excal-core)
 ;;; excal-core.el ends here

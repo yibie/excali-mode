@@ -19,6 +19,7 @@
 (require 'excal-core)
 (require 'excal-select)
 (require 'excal-handles)
+(require 'excal-text)
 
 (defconst excal--shift-locking-angle (/ float-pi 12)
   "SHIFT_LOCKING_ANGLE: rotation snaps to multiples of this with shift.")
@@ -137,18 +138,19 @@ inverted (flipped)."
 
 (defun excal--resize-text (element geometry handle to)
   "Resize text ELEMENT from GEOMETRY so HANDLE's box becomes TO.
-Handles with a vertical component scale the font keeping the aspect
-ratio; the anchor is the opposite corner or edge.  Side handles e and w
-would re-wrap the text in Excalidraw; until wrapping lands they also
-scale the font."
+Handles with a vertical component scale the font, keeping the aspect
+ratio; side handles e and w re-wrap the text to the new width.  The
+anchor is the opposite corner or edge.  Scaling always starts from the
+snapshot, so a drag does not compound."
   (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) (plist-get geometry :box))
                (`(,tx1 ,ty1 ,tx2 ,ty2) to)
-               (h (- y2 y1)) (w (- x2 x1))
-               (scale (max 0.05 (if (memq handle '(e w))
-                                    (if (> w 0) (abs (/ (- tx2 tx1) w)) 1.0)
-                                  (if (> h 0) (abs (/ (- ty2 ty1) h)) 1.0)))))
-    (excal--put element 'fontSize (max 1.0 (* scale (plist-get geometry :font-size))))
-    (excal--measure-text element)
+               (h (- y2 y1)))
+    (if (memq handle '(e w))
+        (excal--text-set-width element (abs (- tx2 tx1)))
+      (excal--put element 'fontSize (plist-get geometry :font-size))
+      (excal--put element 'width (plist-get geometry :width))
+      (excal--put element 'height (plist-get geometry :height))
+      (excal--text-scale element (if (> h 0) (abs (/ (- ty2 ty1) h)) 1.0)))
     (let* ((nw (excal--get element 'width)) (nh (excal--get element 'height))
            (nx (cond ((memq handle '(nw w sw)) (- x2 nw))
                      ((memq handle '(ne e se)) x1)
@@ -210,9 +212,10 @@ or grouped.  FROM-CENTER scales about the box center."
              (flipped (< (* sx sy) 0)))
         (if (equal (excal--get element 'type) "text")
             (progn
-              (excal--put element 'fontSize
-                          (max 1.0 (* (abs sx) (plist-get geometry :font-size))))
-              (excal--measure-text element)
+              (excal--put element 'fontSize (plist-get geometry :font-size))
+              (excal--put element 'width (plist-get geometry :width))
+              (excal--put element 'height (plist-get geometry :height))
+              (excal--text-scale element (abs sx))
               (excal--put element 'x (float (- (car new-center)
                                                (/ (excal--get element 'width) 2.0))))
               (excal--put element 'y (float (- (cdr new-center)

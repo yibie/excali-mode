@@ -56,14 +56,6 @@
   (cons (/ (+ (nth 0 box) (nth 2 box)) 2.0)
         (/ (+ (nth 1 box) (nth 3 box)) 2.0)))
 
-(defun excal--rotate-point (point center angle)
-  "Rotate POINT (X . Y) about CENTER by ANGLE radians."
-  (let* ((dx (- (car point) (car center)))
-         (dy (- (cdr point) (cdr center)))
-         (c (cos angle)) (s (sin angle)))
-    (cons (+ (car center) (- (* dx c) (* dy s)))
-          (+ (cdr center) (+ (* dx s) (* dy c))))))
-
 (defun excal--linear-p (element)
   "Return non-nil if ELEMENT is a line or arrow."
   (member (excal--get element 'type) '("line" "arrow")))

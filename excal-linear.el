@@ -193,7 +193,8 @@ from the neighbouring point.  Dragged arrow ends bind like drawing does."
             (excal--bind-end element end target point)
           (excal--unbind-end element end))))
     (setq excal--binding-highlight nil)
-    (when ends (excal--update-arrow element))))
+    (when ends (excal--update-arrow element))
+    (excal--refresh-bound-text element)))
 
 (defun excal--linear-mouse-down (event start)
   "Handle a press at START on the shown line or arrow's points.

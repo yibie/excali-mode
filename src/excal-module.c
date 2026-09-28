@@ -6,6 +6,7 @@
 
 #include "excal-preview.h"
 #include "excal-render.h"
+#include "excal-text.h"
 #ifdef EXCAL_HAVE_LAYER
 #include "excal-layer.h"
 #endif
@@ -103,6 +104,24 @@ __attribute__((unused)) static char *get_extra_string(emacs_env *env, emacs_valu
 	return get_string(env, get_extra(env, extras, key));
 }
 
+/* Read the text layout extras, see `excal--native-text-extras'.  */
+static void read_text_extras(emacs_env *env, emacs_value extras,
+                             ExcalElement *e)
+{
+	emacs_value offset = get_extra(env, extras, "vertical-offset");
+	if (type_is(env, offset, Qinteger) || type_is(env, offset, Qfloat)) {
+		e->has_text_offset = true;
+		e->text_offset = get_number(env, offset, 0);
+	}
+	emacs_value hole = get_extra(env, extras, "label-hole");
+	if (type_is(env, hole, Qvector) && env->vec_size(env, hole) == 4) {
+		e->has_label_hole = true;
+		for (int i = 0; i < 4; ++i)
+			e->label_hole[i] =
+			        get_number(env, env->vec_get(env, hole, i), 0);
+	}
+}
+
 static ExcalType parse_type(const char *name)
 {
 	static const struct {
@@ -176,6 +195,7 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcalElement *e)
 	e->rounded = env->is_not_nil(env, SLOT(SLOT_ROUNDED));
 	e->start_arrowhead = get_string(env, SLOT(SLOT_START_ARROWHEAD));
 	e->end_arrowhead = get_string(env, SLOT(SLOT_END_ARROWHEAD));
+	read_text_extras(env, SLOT(SLOT_TEXT_EXTRAS), e);
 #undef SLOT
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }
@@ -608,6 +628,89 @@ static emacs_value Fexcal_native_measure_text(emacs_env *env, ptrdiff_t nargs,
 	                                    env->make_float(env, height)});
 }
 
+/* (excal-native-text-width LINE FONT-SIZE FONT-FAMILY) */
+static emacs_value Fexcal_native_text_width(emacs_env *env, ptrdiff_t nargs,
+                                            emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *text = get_string(env, args[0]);
+	if (!text)
+		return Qnil;
+	double width = excal_text_line_width(text, get_number(env, args[1], 20),
+	                                     (int)get_number(env, args[2], 5));
+	free(text);
+	return env->make_float(env, width);
+}
+
+/* (excal-native-add-fonts PATH) */
+static emacs_value Fexcal_native_add_fonts(emacs_env *env, ptrdiff_t nargs,
+                                           emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *path = get_string(env, args[0]);
+	if (!path)
+		return Qnil;
+	int count = excal_text_add_fonts(path);
+	free(path);
+	return count < 0 ? Qnil : env->make_integer(env, count);
+}
+
+/* (excal-native-set-font-family ID FAMILIES) */
+static emacs_value Fexcal_native_set_font_family(emacs_env *env,
+                                                 ptrdiff_t nargs,
+                                                 emacs_value *args,
+                                                 void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *families = get_string(env, args[1]);
+	excal_text_set_family((int)get_number(env, args[0], 0), families);
+	free(families);
+	return Qt;
+}
+
+/* (excal-native-font-family ID) */
+static emacs_value Fexcal_native_font_family(emacs_env *env, ptrdiff_t nargs,
+                                             emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	const char *families =
+	        excal_text_family((int)get_number(env, args[0], 0));
+	return env->make_string(env, families, (ptrdiff_t)strlen(families));
+}
+
+/* (excal-native-font-resolve TEXT FONT-FAMILY) */
+static emacs_value Fexcal_native_font_resolve(emacs_env *env,
+                                              ptrdiff_t nargs,
+                                              emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	char *text = get_string(env, args[0]);
+	if (!text)
+		return Qnil;
+	char *names = excal_text_resolve(text, (int)get_number(env, args[1], 5));
+	free(text);
+	emacs_value result =
+	        env->make_string(env, names, (ptrdiff_t)strlen(names));
+	free(names);
+	return result;
+}
+
+/* (excal-native-font-backend) */
+static emacs_value Fexcal_native_font_backend(emacs_env *env, ptrdiff_t nargs,
+                                              emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)args;
+	(void)data;
+	const char *name = excal_text_backend();
+	return env->make_string(env, name, (ptrdiff_t)strlen(name));
+}
+
 /* (excal-native-write-png CANVAS WIDTH HEIGHT FILE) */
 static emacs_value Fexcal_native_write_png(emacs_env *env, ptrdiff_t nargs,
                                            emacs_value *args, void *data)
@@ -658,6 +761,25 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excal-native-measure-text", Fexcal_native_measure_text, 4,
 	     "Return (WIDTH . HEIGHT) of TEXT in scene units.\n\n"
 	     "(fn TEXT FONT-SIZE FONT-FAMILY LINE-HEIGHT)");
+	bind(env, "excal-native-text-width", Fexcal_native_text_width, 3,
+	     "Return the advance width of the single line LINE.\n\n"
+	     "Newlines are not interpreted.\n\n"
+	     "(fn LINE FONT-SIZE FONT-FAMILY)");
+	bind(env, "excal-native-add-fonts", Fexcal_native_add_fonts, 1,
+	     "Register the font file PATH, or the font files under directory\n"
+	     "PATH, with the font backend.  Return the number registered, or\n"
+	     "nil if PATH cannot be read.\n\n(fn PATH)");
+	bind(env, "excal-native-set-font-family", Fexcal_native_set_font_family,
+	     2,
+	     "Use the Pango family list FAMILIES for font id ID.\n\n"
+	     "FAMILIES nil restores the built-in list.\n\n(fn ID FAMILIES)");
+	bind(env, "excal-native-font-family", Fexcal_native_font_family, 1,
+	     "Return the Pango family list used for font id ID.\n\n(fn ID)");
+	bind(env, "excal-native-font-resolve", Fexcal_native_font_resolve, 2,
+	     "Return the comma-separated font families that show TEXT.\n\n"
+	     "(fn TEXT FONT-FAMILY)");
+	bind(env, "excal-native-font-backend", Fexcal_native_font_backend, 0,
+	     "Return the type name of Pango's font map.\n\n(fn)");
 	bind(env, "excal-native-write-png", Fexcal_native_write_png, 4,
 	     "Write CANVAS pixels to FILE as PNG.\n\n"
 	     "(fn CANVAS WIDTH HEIGHT FILE)");

@@ -18,6 +18,11 @@
   "Return the elements that are not deleted, in z-order."
   (seq-remove (lambda (e) (excal--get e 'isDeleted)) excal--elements))
 
+(defun excal--live-element-by-id (id)
+  "Return the live element with ID, or nil."
+  (and (stringp id)
+       (cl-find-if (lambda (e) (equal (excal--get e 'id) id)) (excal--live-elements))))
+
 (defun excal--selected-p (element)
   "Return non-nil if ELEMENT is selected."
   (memq element excal--selection))
