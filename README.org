@@ -64,7 +64,12 @@ does the same in a fresh GUI Emacs and writes =bench.txt=.
 - =src/excal-render.c= — roughjs-style strokes, hachure fills, Pango text.
 - =src/excal-module.c= — module glue, framebuffer, tile diffing.
 - =src/excal-layer.m= — CoreAnimation overlay backend (macOS).
-- =excal.el= — document model, canvas lifecycle, interaction, benchmark.
+- =excal-core.el= — module loading, shared state, document model.
+- =excal-view.el= — framebuffer, presentation backends, damage, scroll
+  reuse, pan/zoom, export.
+- =excal-edit.el= — hit testing, resize handles, pointer, tools, text.
+- =excal-bench.el= — backend benchmarks.
+- =excal.el= — keymap, major mode and entry points.
 
 * Known gaps
 
