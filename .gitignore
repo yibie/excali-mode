@@ -6,3 +6,4 @@ build/
 *.elc
 bench.txt
 fonts/*/
+.DS_Store
