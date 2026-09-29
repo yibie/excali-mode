@@ -1,0 +1,70 @@
+#+title: Changelog
+
+* Unreleased
+
+** Breaking
+
+- Everything is named =excali= now, not =excal=: files (=excali.el=,
+  =excali-*.el=), commands (=excali-open=, =excali-new=), the major mode
+  (=excali-mode=), options and the module (=excali-module=).  The
+  repository moved from =excal-mode= to =excali-mode=; the old address
+  redirects.
+- =make= byte-compiles the Lisp as well as building the module.  Run it
+  again after pulling: loaded from uncompiled =.el= files, excali runs
+  several times slower.
+
+** New
+
+- Drawing from text: the =.edsl= language of [[https://github.com/tyrchen/excalidraw-dsl][excalidraw-dsl]].
+  =excali-dsl-mode= for =.edsl= files, =C-c C-c= draws the buffer in a
+  scene beside it (again: refreshes it), =excali-dsl-yank= and
+  =excali-dsl-insert-file= add a diagram to the current scene, and
+  =excali-dsl-elements= and friends make diagrams from Lisp.  Layout is
+  automatic and layered; arrows and labels are bound, so the drawing
+  stays editable.
+- The official library collection of libraries.excalidraw.com, from
+  Emacs: =C-c l o= lists it, =RET= previews a library in place of the
+  list (=q= goes back), =+= adds the item at point and =a= a whole
+  library.  Items the personal library holds are marked, added ones
+  light up, and the list marks libraries wholly added.
+- Library items can be deleted: =d= in the library browser (=C-c l b=),
+  or =C-c l d= by name.
+- One scene in several windows, each with its own zoom and scroll;
+  editing in one redraws the others.
+- The style panel (=s=) follows upstream's properties panel: its
+  properties in its order and words, only those the selection or tool
+  takes, then layers, align and actions.  Each property opens a panel
+  of its values; colors open a picker like upstream's, with the fifteen
+  colors on =q= .. =b=, the shades of the current color on =1= .. =5=
+  and =#= for a hex code.
+- Pointer shapes over handles, elements, links and line points, shown
+  through the canvas image's hot spots so Emacs switches them itself.
+- Dragging with the right button pans, like the middle one; shift with
+  a vertical wheel pans sideways.
+
+** Fixed
+
+- Wheel panning goes the way Emacs scrolls a buffer on every system and
+  honors =mouse-wheel-flip-direction=.  Sideways panning was reversed on
+  Windows and Linux, and a tilted wheel on Windows panned vertically.
+
+** Faster
+
+- Large scenes stay responsive.  With 2846 elements: dragging 300 of
+  them went from 163 ms a frame to 9, a hit test from 30 ms to 1.4, and
+  rebuilding pointer hot spots after a command from 160 ms to 2.  The
+  module keeps the elements it has read, a render repaints only what
+  changed, and hot spots are built around the mouse.
+- Library thumbnails are cached on disk and drawn in the background,
+  those in view first: a library of 249 icons opens in about 30 ms
+  instead of blocking for a second.
+
+* 0.1.0 — 2026-09-28
+
+First public release.  Opens, edits and saves =.excalidraw= files as the
+web app does: every drawing tool (with laser, eye dropper, bucket fill,
+autoshape and lasso), bound and elbow arrows, flowcharts grown with
+=Cmd+arrow=, groups, frames, images, the element library, snapping,
+dark mode, undo, and PNG/SVG export with the scene embedded.  Drawing
+is done by a Cairo/Pango module into Emacs 32's canvas images, with a
+CoreAnimation layer on macOS.

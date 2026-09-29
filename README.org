@@ -401,6 +401,10 @@ fallback fonts, so widths and wrapping differ from the web app.  Native
 pointer shapes need macOS; elsewhere the nearest Emacs =pointer= shape
 stands in.  Linux and Windows builds are cross-compiled but not run.
 
+* Changes
+
+See =CHANGELOG.org=.
+
 * License
 
 GPL-3.0-or-later; see =LICENSE=.  excali-mode ports code from Excalidraw,
