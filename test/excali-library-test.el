@@ -11,8 +11,16 @@
   "Run BODY with a fresh temporary library file."
   `(let* ((dir (make-temp-file "excali-lib" t))
           (excali-library-file (expand-file-name "lib.excalidrawlib" dir))
+          (excali-library-thumbnail-directory (expand-file-name "thumbnails/" dir))
+          (excali--thumbnail-memo (make-hash-table :test #'equal))
+          (excali--official-complete (make-hash-table :test #'equal))
           (excali--library nil) (excali--library-loaded nil))
      (unwind-protect (progn ,@body)
+       ;; Background thumbnail work must not outlive the bindings above.
+       (dolist (buffer (buffer-list))
+         (with-current-buffer buffer
+           (when (or excali--thumbnail-queue excali--thumbnail-timer)
+             (excali--thumbnail-reset))))
        (delete-directory dir t))))
 
 (ert-deftest excali-library-test-add-save-reload ()
@@ -74,14 +82,18 @@
         (should (= (/ (+ (nth 0 b) (nth 2 b)) 2) 100.0)))
       (should-not (member (excali--get (car excali--elements) 'id) '("i1" "i2")))))))
 
+(defun excali-library-test--item (x)
+  "Return a library item of one 400x100 rectangle at X."
+  (list (cons 'id (format "item-%s" x))
+        (cons 'elements (vector (excali--make-element "rectangle" x 0 (cons 'width 400.0)
+                                                      (cons 'height 100.0))))))
+
 (ert-deftest excali-library-test-thumbnail ()
   "Thumbnails render to images no larger than the thumbnail size."
-  (let ((image (excali--library-thumbnail
-                (list (cons 'elements (vector (excali--make-element
-                                               "rectangle" 0 0 (cons 'width 400.0)
-                                               (cons 'height 100.0))))))))
-    (should (eq (car image) 'image))
-    (should (eq (plist-get (cdr image) :type) 'png))))
+  (excali-library-test--with-file
+   (let ((image (excali--library-thumbnail (excali-library-test--item 0))))
+     (should (eq (car image) 'image))
+     (should (eq (plist-get (cdr image) :type) 'png)))))
 
 ;;;; Deleting
 
@@ -254,22 +266,66 @@ path component; others fail as a 404 would."
      (should (= (length (excali--library)) 8)))))
 
 (ert-deftest excali-library-test-official-preview ()
-  "A preview shows each item; `+' adds the one at point, `a' the rest."
+  "A preview replaces the list; `+' adds the item at point, `a' the rest."
   (excali-library-test--offline
-   (excali-library-official-refresh)
-   (let ((ia (excali-library-test--entry "Information Architecture")))
-     (excali-library-official-preview ia)
-     (with-current-buffer "*excali library: Information Architecture*"
-       (should (string-match-p "inwardmovement\\|Information Architecture" (buffer-string)))
+   (excali-library-browse-official)
+   (with-current-buffer "*excali official libraries*"
+     (excali-library-official-filter "architecture")
+     (let ((ia (excali-library-test--entry "Information Architecture")))
+       (should (excali--official-goto ia))
+       (excali-library-official-preview ia)
+       ;; The same buffer now shows the library.
+       (should (derived-mode-p 'excali-library-official-preview-mode))
+       (should (string-match-p "Information Architecture" (buffer-string)))
+       (should (string-match-p "0 of 2 in your library" (excali--official-preview-header)))
+       (excali--library-finish-thumbnails)
        (let ((rows (excali-library-test--item-positions)))
          (should (= (length rows) 2))
          (goto-char (car rows))
          (excali-library-official-add-at-point)
          (should (= (length (excali--library)) 1))
+         (setq rows (excali-library-test--item-positions))
+         ;; The added row says so; the other does not.
+         (should (string-match-p "✓ added" (buffer-substring (car rows) (cadr rows))))
+         (should-not (string-match-p "✓" (buffer-substring (cadr rows) (point-max))))
          (excali-library-official-add-all)
          (should (= (length (excali--library)) 2))
          (excali-library-official-add-all)
-         (should (= (length (excali--library)) 2)))))))
+         (should (= (length (excali--library)) 2))
+         (should (string-match-p "2 of 2 in your library" (excali--official-preview-header))))
+       ;; q goes back to the list, filtered as it was, at the same library,
+       ;; now marked as wholly added.
+       (excali-library-official-back)
+       (should (derived-mode-p 'excali-library-official-mode))
+       (should (equal excali--official-filter "architecture"))
+       (should (equal (alist-get 'name (tabulated-list-get-id)) "Information Architecture"))
+       (should (string-match-p "✓" (buffer-substring (line-beginning-position)
+                                                      (line-end-position))))
+       ;; Previewing again marks what the library holds.
+       (excali-library-official-preview ia)
+       (should (string-match-p "✓ in library" (buffer-string)))))))
+
+(ert-deftest excali-library-test-thumbnails-cached-and-queued ()
+  "Thumbnails start as placeholders, fill in, and come from the cache next time."
+  (excali-library-test--with-file
+   (let ((items (list (excali-library-test--item 0) (excali-library-test--item 40)))
+         (rendered 0))
+     (cl-letf* ((render (symbol-function 'excali--render-thumbnail))
+                ((symbol-function 'excali--render-thumbnail)
+                 (lambda (item file) (cl-incf rendered) (funcall render item file))))
+       (with-temp-buffer
+         (excali--insert-item-rows items)
+         (should (= (length excali--thumbnail-queue) 2))
+         (excali--library-finish-thumbnails)
+         (should (null excali--thumbnail-queue))
+         (should (= rendered 2))
+         (should (eq (car-safe (get-text-property (point-min) 'display)) 'image)))
+       ;; Next session: the files are there, nothing is rendered or queued.
+       (clrhash excali--thumbnail-memo)
+       (with-temp-buffer
+         (excali--insert-item-rows items)
+         (should (null excali--thumbnail-queue))
+         (should (= rendered 2)))))))
 
 (ert-deftest excali-library-test-http-body ()
   "Response bodies are split from headers and decoded as UTF-8."

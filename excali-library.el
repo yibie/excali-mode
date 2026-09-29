@@ -259,45 +259,165 @@ in their column and as tall as the tallest in their row."
 
 (defvar-local excali--library-origin nil "The excali buffer the browser inserts into.")
 
-(defun excali--library-thumbnail (item)
-  "Return an image of library ITEM, at most `excali--thumbnail-size' wide."
+(defcustom excali-library-thumbnail-directory
+  (expand-file-name "excali/thumbnails/" user-emacs-directory)
+  "Directory caching rendered library thumbnails as PNG files, or nil.
+With nil, thumbnails are rendered again every time."
+  :type '(choice directory (const :tag "No cache" nil))
+  :group 'excali)
+
+(defvar excali--thumbnail-memo (make-hash-table :test #'equal)
+  "Thumbnail images by cache key, for this session.")
+
+(defun excali--thumbnail-key (item)
+  "Return the cache key of ITEM's thumbnail.
+It hashes what the picture depends on: the thumbnail size and each
+element's id, version, nonce, type and box."
+  (sha1 (prin1-to-string
+         (cons excali--thumbnail-size
+               (mapcar (lambda (e)
+                         (mapcar (lambda (key) (alist-get key e))
+                                 '(id version versionNonce type x y width height isDeleted)))
+                       (alist-get 'elements item))))))
+
+(defun excali--render-thumbnail (item file)
+  "Render library ITEM into the PNG FILE, at most `excali--thumbnail-size' wide."
   (let* ((elements (excali--restore-elements (append (alist-get 'elements item) nil)))
          (b (excali--elements-bounds elements))
          (pad 8.0)
          (w (+ (- (nth 2 b) (nth 0 b)) (* 2 pad)))
          (h (+ (- (nth 3 b) (nth 1 b)) (* 2 pad)))
          (scale (min 1.0 (/ excali--thumbnail-size (max w h))))
-         (fb (excali-native-fb-create (max 1 (round (* w scale))) (max 1 (round (* h scale)))))
-         (file (make-temp-file "excali-lib" nil ".png")))
+         (fb (excali-native-fb-create (max 1 (round (* w scale))) (max 1 (round (* h scale))))))
     (with-temp-buffer
       (setq excali--native-cache (make-hash-table :test #'eq))
       (setq excali--elements elements)
       (excali-native-fb-render fb scale 1.0 (- pad (nth 0 b)) (- pad (nth 1 b))
                               (vconcat (mapcar #'excali--native-element elements)) nil))
-    (excali-native-fb-write-png fb file)
-    (prog1 (create-image (with-temp-buffer
-                           (set-buffer-multibyte nil)
-                           (insert-file-contents-literally file)
-                           (buffer-string))
-                         'png t)
-      (delete-file file))))
+    (make-directory (file-name-directory file) t)
+    (excali-native-fb-write-png fb file)))
 
-(defun excali--insert-item-rows (items &optional label)
+(defun excali--cached-thumbnail (item)
+  "Return ITEM's thumbnail if it needs no rendering, else nil."
+  (let ((key (excali--thumbnail-key item)))
+    (or (gethash key excali--thumbnail-memo)
+        (when-let* ((dir excali-library-thumbnail-directory)
+                    (file (expand-file-name (concat key ".png") dir))
+                    ((file-exists-p file)))
+          (puthash key (create-image file 'png nil) excali--thumbnail-memo)))))
+
+(defun excali--library-thumbnail (item)
+  "Return an image of library ITEM, rendering it unless cached."
+  (or (excali--cached-thumbnail item)
+      (let ((key (excali--thumbnail-key item)))
+        (puthash key
+                 (if excali-library-thumbnail-directory
+                     (let ((file (expand-file-name (concat key ".png")
+                                                   excali-library-thumbnail-directory)))
+                       (excali--render-thumbnail item file)
+                       (create-image file 'png nil))
+                   ;; No cache: keep the pixels, not the file.
+                   (let ((file (make-temp-file "excali-lib" nil ".png")))
+                     (unwind-protect
+                         (progn (excali--render-thumbnail item file)
+                                (create-image (with-temp-buffer
+                                                (set-buffer-multibyte nil)
+                                                (insert-file-contents-literally file)
+                                                (buffer-string))
+                                              'png t))
+                       (delete-file file))))
+                 excali--thumbnail-memo))))
+
+;;;;; Rendering thumbnails in the background
+
+(defvar-local excali--thumbnail-queue nil
+  "Rows still showing a placeholder, as (MARKER . ITEM) in buffer order.")
+(defvar-local excali--thumbnail-timer nil "Timer rendering queued thumbnails.")
+
+(defconst excali--thumbnail-budget 0.03
+  "Seconds of thumbnail rendering between chances to handle input.")
+
+(defun excali--thumbnail-placeholder ()
+  "Return a thumbnail-sized grey square standing in for a picture."
+  (propertize " " 'display `(space :width (,excali--thumbnail-size)
+                                   :height (,excali--thumbnail-size))
+              'face '(:background "#e9ecef")))
+
+(defun excali--thumbnail-reset ()
+  "Forget the thumbnails queued in this buffer."
+  (when excali--thumbnail-timer (cancel-timer excali--thumbnail-timer))
+  (dolist (job excali--thumbnail-queue) (set-marker (car job) nil))
+  (setq excali--thumbnail-timer nil excali--thumbnail-queue nil))
+
+(defun excali--next-thumbnail-job ()
+  "Pop the next queued thumbnail, preferring one a window shows."
+  (let* ((windows (get-buffer-window-list nil nil t))
+         (job (or (seq-find (lambda (job)
+                              (seq-some (lambda (w)
+                                          (<= (window-start w) (car job) (window-end w)))
+                                        windows))
+                            excali--thumbnail-queue)
+                  (car excali--thumbnail-queue))))
+    (setq excali--thumbnail-queue (delq job excali--thumbnail-queue))
+    job))
+
+(defun excali--fill-thumbnail (job)
+  "Replace the placeholder of JOB, (MARKER . ITEM), with its thumbnail."
+  (let ((inhibit-read-only t) (pos (car job)))
+    (when (marker-buffer pos)
+      (with-silent-modifications
+        (put-text-property pos (1+ pos) 'display (excali--library-thumbnail (cdr job)))
+        (remove-text-properties pos (1+ pos) '(face nil)))
+      (set-marker pos nil))))
+
+(defun excali--thumbnail-work (buffer)
+  "Render queued thumbnails of BUFFER for a moment, then yield."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq excali--thumbnail-timer nil)
+      (let ((deadline (+ (float-time) excali--thumbnail-budget)))
+        (while (and excali--thumbnail-queue (< (float-time) deadline))
+          (excali--fill-thumbnail (excali--next-thumbnail-job))))
+      (when excali--thumbnail-queue
+        (setq excali--thumbnail-timer
+              (run-with-timer 0.01 nil #'excali--thumbnail-work buffer))))))
+
+(defun excali--library-finish-thumbnails ()
+  "Render every thumbnail still queued in this buffer now."
+  (while excali--thumbnail-queue
+    (excali--fill-thumbnail (excali--next-thumbnail-job)))
+  (excali--thumbnail-reset))
+
+(defun excali--insert-item-rows (items &optional label status)
   "Insert a thumbnail row for each of ITEMS, with LABEL's text.
 LABEL is called with an item and its index; it defaults to
-`excali--library-item-label'.  Each row carries its item as the
-`excali-library-item' property."
+`excali--library-item-label'.  STATUS, if given, is called with an item
+and returns a string to show after the label, or nil.  Each row carries
+its item as the `excali-library-item' property.  Thumbnails not cached
+yet start as placeholders and are rendered in the background, those a
+window shows first."
   (cl-loop for item in items for i from 0
            do (let ((start (point)))
-                (insert-image (excali--library-thumbnail item))
-                (insert " " (funcall (or label #'excali--library-item-label) item i) "\n")
+                (if-let* ((image (excali--cached-thumbnail item)))
+                    (insert-image image)
+                  (push (cons (copy-marker (point)) item) excali--thumbnail-queue)
+                  (insert (excali--thumbnail-placeholder)))
+                (insert " " (funcall (or label #'excali--library-item-label) item i))
+                (insert (propertize (or (and status (funcall status item)) "")
+                                    'excali-library-status t))
+                (insert "\n")
                 (put-text-property start (point) 'excali-library-item item)
-                (put-text-property start (point) 'mouse-face 'highlight))))
+                (put-text-property start (point) 'mouse-face 'highlight)))
+  (setq excali--thumbnail-queue (nreverse excali--thumbnail-queue))
+  (when (and excali--thumbnail-queue (not excali--thumbnail-timer))
+    (setq excali--thumbnail-timer
+          (run-with-timer 0 nil #'excali--thumbnail-work (current-buffer)))))
 
 (defun excali--library-render-browser ()
   "Fill the current buffer with the personal library's thumbnails."
   (let ((inhibit-read-only t)
         (items (excali--library)))
+    (excali--thumbnail-reset)
     (erase-buffer)
     (if (null items)
         (insert "The library is empty.  Select elements and run `excali-library-add',\n"
@@ -514,6 +634,43 @@ libraries from the collection are recognized by their element ids."
     (and (= (length ea) (length eb))
          (cl-every (lambda (x y) (equal (alist-get 'id x) (alist-get 'id y))) ea eb))))
 
+(defvar excali--official-last-added nil
+  "The items of the last addition that the personal library now holds.")
+
+(defvar excali--official-complete (make-hash-table :test #'equal)
+  "Sources of the collection's libraries known to be wholly in the library.")
+
+(defun excali--official-in-library-p (item)
+  "Return non-nil if the personal library holds ITEM."
+  (seq-some (lambda (l) (excali--library-same-ids-p l item)) (excali--library)))
+
+(defun excali--official-note-library (entry items)
+  "Remember whether all ITEMS of the library ENTRY are in the personal library."
+  (if (and items (seq-every-p #'excali--official-in-library-p items))
+      (puthash (alist-get 'source entry) t excali--official-complete)
+    (remhash (alist-get 'source entry) excali--official-complete)))
+
+(defface excali-library-added
+  '((t :inherit success :weight bold))
+  "Face of the mark on library items the personal library holds."
+  :group 'excali)
+
+(defface excali-library-flash
+  '((((background dark)) :background "#2b5c34")
+    (t :background "#d3f9d8"))
+  "Face briefly lighting up rows that were just added."
+  :group 'excali)
+
+(defun excali--flash-regions (regions)
+  "Light up REGIONS, a list of (START . END), for a moment."
+  (let ((overlays (mapcar (lambda (r)
+                            (let ((ov (make-overlay (car r) (cdr r))))
+                              (overlay-put ov 'face 'excali-library-flash)
+                              (overlay-put ov 'priority 100)
+                              ov))
+                          regions)))
+    (run-with-timer 0.9 nil (lambda () (mapc #'delete-overlay overlays)))))
+
 (defun excali--official-add-items (entry items)
   "Add library ITEMS from index ENTRY to the personal library.
 Items already present are skipped; unnamed ones take the library's
@@ -531,6 +688,9 @@ name.  Return the number added."
     (when new
       (setq excali--library (append new local))
       (excali--save-library))
+    (setq excali--official-last-added
+          (seq-filter (lambda (item) (excali--official-in-library-p item)) items))
+    (excali--official-note-library entry items)
     (message "Added %d item%s from %s%s" (length new) (if (= (length new) 1) "" "s")
              (alist-get 'name entry)
              (if (< (length new) (length items))
@@ -538,14 +698,16 @@ name.  Return the number added."
                ""))
     (length new)))
 
-(defun excali--official-fetch-library (entry callback)
-  "Fetch the library of index ENTRY and call CALLBACK with its items."
+(defun excali--official-fetch-library (entry callback &optional on-error)
+  "Fetch the library of index ENTRY and call CALLBACK with its items.
+On failure, ON-ERROR, if given, is called with the error message."
   (message "Fetching %s..." (alist-get 'name entry))
   (excali--library-fetch
    (excali--official-library-url entry)
    (lambda (text error)
      (if error
-         (message "Could not fetch %s: %s" (alist-get 'name entry) error)
+         (progn (message "Could not fetch %s: %s" (alist-get 'name entry) error)
+                (when on-error (funcall on-error error)))
        (funcall callback (excali--parse-library text))))))
 
 ;;;;; The list
@@ -564,7 +726,10 @@ name.  Return the number added."
   "Return the tabulated list row of index ENTRY."
   (let ((items (alist-get 'itemNames entry)))
     (list entry
-          (vector (alist-get 'name entry)
+          (vector (if (gethash (alist-get 'source entry) excali--official-complete)
+                      (propertize "✓" 'face 'excali-library-added)
+                    "")
+                  (alist-get 'name entry)
                   (if items (number-to-string (length items)) "")
                   (number-to-string (alist-get 'downloads entry))
                   (or (alist-get 'updated entry) "")
@@ -612,10 +777,31 @@ name.  Return the number added."
   (or (tabulated-list-get-id) (user-error "No library here")))
 
 (defun excali-library-official-add (entry)
-  "Add every item of the official library ENTRY to the personal library."
+  "Add every item of the official library ENTRY to the personal library.
+In the collection's list, its row is then marked and lights up."
   (interactive (list (excali--official-entry-at-point)))
-  (excali--official-fetch-library
-   entry (lambda (items) (excali--official-add-items entry items))))
+  (let ((buffer (current-buffer)))
+    (excali--official-fetch-library
+     entry (lambda (items)
+             (excali--official-add-items entry items)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer
+                 (when (derived-mode-p 'excali-library-official-mode)
+                   (excali--official-refresh-list)
+                   (when (excali--official-goto entry)
+                     (excali--flash-regions
+                      (list (cons (line-beginning-position) (line-end-position))))))))))))
+
+(defun excali--official-goto (entry)
+  "Move to the row of ENTRY in the collection's list; return non-nil if found."
+  (let ((start (point)) found)
+    (goto-char (point-min))
+    (while (and (not found) (not (eobp)))
+      (if (equal (alist-get 'source (tabulated-list-get-id)) (alist-get 'source entry))
+          (setq found t)
+        (forward-line 1)))
+    (unless found (goto-char start))
+    found))
 
 (defun excali-library-official-filter (regexp)
   "Show only libraries whose name, description, authors or items match REGEXP.
@@ -650,9 +836,10 @@ An empty REGEXP shows them all."
   "List the official Excalidraw library collection.
 \\{excali-library-official-mode-map}"
   (setq tabulated-list-format
-        (vector '("Name" 28 t)
-                (list "Items" 5 (excali--official-numeric-sort 1) :right-align t)
-                (list "Downloads" 9 (excali--official-numeric-sort 2) :right-align t)
+        (vector '("" 1 nil)
+                '("Name" 28 t)
+                (list "Items" 5 (excali--official-numeric-sort 2) :right-align t)
+                (list "Downloads" 9 (excali--official-numeric-sort 3) :right-align t)
                 '("Updated" 10 t)
                 '("Authors" 20 t)
                 '("Description" 0 nil))
@@ -664,37 +851,126 @@ An empty REGEXP shows them all."
 
 (defvar-local excali--official-entry nil "The index entry a preview shows.")
 (defvar-local excali--official-items nil "The items of the library a preview shows.")
+(defvar-local excali--official-return nil
+  "The list a preview goes back to: (FILTER . ENTRY).")
+(defvar-local excali--official-error nil "Why the previewed library could not be fetched.")
 
 (defun excali-library-official-preview (entry)
-  "Show the items of the official library ENTRY.
+  "Show the items of the official library ENTRY in place of the list.
 In the preview, RET inserts an item into the scene, `+' adds it to the
-personal library and `a' adds them all."
+personal library, `a' adds them all and `q' goes back to the list."
   (interactive (list (excali--official-entry-at-point)))
-  (let ((origin excali--library-origin))
+  (let* ((listing (derived-mode-p 'excali-library-official-mode))
+         (origin (cond (listing excali--library-origin)
+                       ((derived-mode-p 'excali-library-mode) excali--library-origin)
+                       (t (current-buffer))))
+         (return (cons (and listing excali--official-filter) entry))
+         (buffer (if listing (current-buffer)
+                   (get-buffer-create "*excali official libraries*"))))
+    (with-current-buffer buffer
+      (excali-library-official-preview-mode)
+      (setq excali--library-origin origin
+            excali--official-return return
+            excali--official-entry entry)
+      (excali--official-render-preview))
+    (unless listing (pop-to-buffer buffer))
     (excali--official-fetch-library
      entry
      (lambda (items)
-       (with-current-buffer (get-buffer-create (format "*excali library: %s*"
-                                                       (alist-get 'name entry)))
-         (excali-library-official-preview-mode)
-         (setq excali--library-origin origin
-               excali--official-entry entry
-               excali--official-items items)
-         (let ((inhibit-read-only t))
-           (erase-buffer)
-           (insert (propertize (alist-get 'name entry) 'face 'bold)
-                   "  by " (mapconcat (lambda (a) (or (alist-get 'name a) ""))
-                                      (alist-get 'authors entry) ", ")
-                   "\n" (or (alist-get 'description entry) "") "\n\n")
-           (excali--official-insert-preview-image entry (current-buffer) (point))
-           (excali--insert-item-rows
-            items (lambda (item i)
-                    (let ((name (alist-get 'name item)))
-                      (format "%d. %s" (1+ i)
-                              (if (and (stringp name) (not (string-empty-p name))) name
-                                (format "%s %d" (alist-get 'name entry) (1+ i)))))))
-           (goto-char (point-min)))
-         (pop-to-buffer (current-buffer)))))))
+       (excali--official-preview-arrived buffer entry items nil))
+     (lambda (error)
+       (excali--official-preview-arrived buffer entry nil error)))))
+
+(defun excali--official-preview-arrived (buffer entry items error)
+  "Show ITEMS (or the fetch ERROR) of ENTRY if BUFFER still previews it."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (and (derived-mode-p 'excali-library-official-preview-mode)
+                 (eq excali--official-entry entry))
+        (setq excali--official-items items excali--official-error error)
+        (when items (excali--official-note-library entry items))
+        (excali--official-render-preview)))))
+
+(defun excali--official-item-status (item)
+  "Return the mark of ITEM in a preview: whether the library holds it."
+  (and (excali--official-in-library-p item)
+       (propertize "  ✓ in library" 'face 'excali-library-added)))
+
+(defun excali--official-preview-header ()
+  "Return the header line of a preview."
+  (concat (substitute-command-keys
+           (concat "\\<excali-library-official-preview-mode-map>"
+                   "\\[excali-library-official-back] back to the collection  "
+                   "\\[excali-library-insert-at-point] insert  "
+                   "\\[excali-library-official-add-at-point] add item  "
+                   "\\[excali-library-official-add-all] add all"))
+          (when excali--official-items
+            (format "    %d of %d in your library"
+                    (seq-count #'excali--official-in-library-p excali--official-items)
+                    (length excali--official-items)))))
+
+(defun excali--official-render-preview ()
+  "Fill the preview buffer with the previewed library."
+  (let ((inhibit-read-only t)
+        (entry excali--official-entry)
+        (items excali--official-items))
+    (excali--thumbnail-reset)
+    (erase-buffer)
+    (insert (propertize (alist-get 'name entry) 'face 'bold)
+            "  by " (mapconcat (lambda (a) (or (alist-get 'name a) ""))
+                               (alist-get 'authors entry) ", ")
+            "\n" (or (alist-get 'description entry) "") "\n\n")
+    (cond
+     (excali--official-error
+      (insert (format "Could not fetch the library: %s\n" excali--official-error)))
+     ((null items) (insert "Fetching the library...\n"))
+     (t
+      (excali--official-insert-preview-image entry (current-buffer) (point))
+      (excali--insert-item-rows
+       items (lambda (item i)
+               (let ((name (alist-get 'name item)))
+                 (format "%d. %s" (1+ i)
+                         (if (and (stringp name) (not (string-empty-p name))) name
+                           (format "%s %d" (alist-get 'name entry) (1+ i))))))
+       #'excali--official-item-status)))
+    (goto-char (point-min))
+    (force-mode-line-update)))
+
+(defun excali--official-mark-rows (items)
+  "Mark the preview rows of ITEMS as just added and light them up."
+  (let ((inhibit-read-only t) regions)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((item (get-text-property (point) 'excali-library-item))
+              (bol (line-beginning-position)) (eol (line-end-position)))
+          (when (and item (seq-some (lambda (i) (excali--library-same-ids-p i item)) items))
+            ;; A row without a mark has an empty one at its end.
+            (let* ((start (or (text-property-any bol eol 'excali-library-status t) eol))
+                   (end (or (next-single-property-change start 'excali-library-status nil eol)
+                            eol)))
+              (delete-region start end)
+              (goto-char start)
+              (insert (propertize "  ✓ added" 'face 'excali-library-added
+                                  'excali-library-status t
+                                  'excali-library-item item 'mouse-face 'highlight)))
+            (push (cons bol (line-end-position)) regions)))
+        (forward-line 1)))
+    (excali--flash-regions regions)
+    (force-mode-line-update)))
+
+(defun excali-library-official-back ()
+  "Go back from a preview to the collection's list, where it was."
+  (interactive)
+  (let ((origin excali--library-origin)
+        (return excali--official-return))
+    (excali--thumbnail-reset)
+    (excali-library-official-mode)
+    (setq excali--library-origin origin
+          excali--official-filter (car return))
+    (excali--official-refresh-list)
+    (goto-char (point-min))
+    (when (cdr return) (excali--official-goto (cdr return)))))
 
 (defun excali--official-insert-preview-image (entry buffer position)
   "Fetch the site's preview picture of ENTRY and show it in BUFFER at POSITION."
@@ -718,25 +994,31 @@ personal library and `a' adds them all."
      t)))
 
 (defun excali-library-official-add-at-point ()
-  "Add the previewed item at point to the personal library."
+  "Add the previewed item at point to the personal library, and mark it."
   (interactive)
   (excali--official-add-items excali--official-entry
-                              (list (or (excali--library-item-at) (user-error "No item here")))))
+                              (list (or (excali--library-item-at) (user-error "No item here"))))
+  (excali--official-mark-rows excali--official-last-added))
 
 (defun excali-library-official-add-all ()
-  "Add every previewed item to the personal library."
+  "Add every previewed item to the personal library, and mark them."
   (interactive)
-  (excali--official-add-items excali--official-entry excali--official-items))
+  (unless excali--official-items (user-error "The library has not arrived yet"))
+  (excali--official-add-items excali--official-entry excali--official-items)
+  (excali--official-mark-rows excali--official-last-added))
 
 (defvar-keymap excali-library-official-preview-mode-map
   "RET" #'excali-library-insert-at-point
   "<mouse-1>" #'excali-library-insert-at-point
   "+" #'excali-library-official-add-at-point
-  "a" #'excali-library-official-add-all)
+  "a" #'excali-library-official-add-all
+  "^" #'excali-library-official-back
+  "q" #'excali-library-official-back)
 
 (define-derived-mode excali-library-official-preview-mode special-mode "Excali-Library"
-  "Preview a library of the official collection.
-\\{excali-library-official-preview-mode-map}")
+  "Preview a library of the official collection, in place of its list.
+\\{excali-library-official-preview-mode-map}"
+  (setq header-line-format '(:eval (excali--official-preview-header))))
 
 (provide 'excali-library)
 ;;; excali-library.el ends here

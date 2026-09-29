@@ -286,10 +286,17 @@ last update, authors and description.  =RET= previews a library (the
 site's picture and every item), =a= adds all of it, =/= filters by a
 regexp over names, descriptions, authors and item names, =g= fetches
 the index again, =o= shows the library on the site; =S= sorts by the
-column at point.  In a preview, =RET= inserts the item at point, =+=
-adds it to the personal library, =a= adds them all.  Items keep their
-names; unnamed ones take the library's.  Adding a library twice adds
-nothing twice.  The index is fetched from
+column at point; a =✓= marks libraries wholly in the personal library.
+The preview takes the list's place: =RET= inserts the item at point,
+=+= adds it to the personal library, =a= adds them all, =q= goes back to
+the list where you left it.  Items the library holds say =✓ in library=;
+added ones say =✓ added= and light up.  Items keep their names; unnamed
+ones take the library's.  Adding a library twice adds nothing twice.
+
+Thumbnails are cached as PNG files in
+=excali-library-thumbnail-directory=; those not cached yet show as grey
+squares and are drawn in the background, those in view first, so large
+libraries open at once.  The index is fetched from
 =excali-library-official-url= (the files the site's "Add to Excalidraw"
 button hands to excalidraw.com) and cached in
 =excali-library-official-cache=.
