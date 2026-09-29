@@ -15,7 +15,16 @@
 ;;   ids and seeds;
 ;; - `excali-library-import' merges another library (v1 or v2), skipping
 ;;   items already present; `excali-library-export' writes one;
-;; - `excali-library-browse' shows thumbnails; RET or a click inserts.
+;; - `excali-library-browse' shows thumbnails; RET or a click inserts,
+;;   `d' deletes; `excali-library-remove' deletes items by name;
+;; - `excali-library-browse-official' lists the official collection of
+;;   libraries.excalidraw.com: the same index (`libraries.json') and
+;;   files (`libraries/AUTHOR/NAME.excalidrawlib') that the site's "Add to
+;;   Excalidraw" button hands to excalidraw.com.  RET previews a library,
+;;   `a' adds it all; in a preview, `+' adds the item at point.  Items
+;;   from the collection are recognized by their element ids, so adding
+;;   a library again adds nothing twice.  The index is cached in
+;;   `excali-library-official-cache'; `g' fetches it again.
 
 ;;; Code:
 
@@ -24,6 +33,7 @@
 (require 'excali-select)
 (require 'excali-restore)
 (require 'excali-clipboard)
+(require 'tabulated-list)
 
 (declare-function excali-native-fb-create "excali-module")
 (declare-function excali-native-fb-render "excali-module")
@@ -229,20 +239,21 @@ in their column and as tall as the tallest in their row."
   (let ((coding-system-for-write 'utf-8-unix))
     (write-region (excali--serialize-library (excali--library)) nil file)))
 
-(defun excali-library-remove (label)
-  "Remove the library item shown as LABEL."
+(defun excali-library-remove (labels)
+  "Remove the library items shown as LABELS, a list or a single label."
   (interactive
    (let ((items (excali--library)))
      (unless items (user-error "The library is empty"))
-     (list (completing-read "Remove library item: "
-                            (cl-loop for item in items for i from 0
-                                     collect (excali--library-item-label item i))
-                            nil t))))
-  (setq excali--library
-        (cl-loop for item in (excali--library) for i from 0
-                 unless (equal (excali--library-item-label item i) label)
-                 collect item))
-  (excali--save-library))
+     (list (completing-read-multiple "Remove library items: "
+                                     (cl-loop for item in items for i from 0
+                                              collect (excali--library-item-label item i))
+                                     nil t))))
+  (let* ((labels (if (stringp labels) (list labels) labels))
+         (doomed (cl-loop for item in (excali--library) for i from 0
+                          when (member (excali--library-item-label item i) labels)
+                          collect item)))
+    (excali--library-delete-items doomed)
+    (message "Removed %d item%s" (length doomed) (if (= (length doomed) 1) "" "s"))))
 
 ;;;; Browsing
 
@@ -271,43 +282,461 @@ in their column and as tall as the tallest in their row."
                          'png t)
       (delete-file file))))
 
-(defun excali-library-browse ()
-  "Show the library as thumbnails; RET or a click inserts an item."
-  (interactive)
-  (let ((origin (current-buffer))
+(defun excali--insert-item-rows (items &optional label)
+  "Insert a thumbnail row for each of ITEMS, with LABEL's text.
+LABEL is called with an item and its index; it defaults to
+`excali--library-item-label'.  Each row carries its item as the
+`excali-library-item' property."
+  (cl-loop for item in items for i from 0
+           do (let ((start (point)))
+                (insert-image (excali--library-thumbnail item))
+                (insert " " (funcall (or label #'excali--library-item-label) item i) "\n")
+                (put-text-property start (point) 'excali-library-item item)
+                (put-text-property start (point) 'mouse-face 'highlight))))
+
+(defun excali--library-render-browser ()
+  "Fill the current buffer with the personal library's thumbnails."
+  (let ((inhibit-read-only t)
         (items (excali--library)))
+    (erase-buffer)
+    (if (null items)
+        (insert "The library is empty.  Select elements and run `excali-library-add',\n"
+                "or add libraries from the official collection with "
+                "`excali-library-browse-official'.\n")
+      (excali--insert-item-rows items))
+    (goto-char (point-min))))
+
+(defun excali-library-browse ()
+  "Show the library as thumbnails; RET or a click inserts an item.
+\\<excali-library-mode-map>\\[excali-library-delete-at-point] deletes the item at point."
+  (interactive)
+  (let ((origin (current-buffer)))
     (with-current-buffer (get-buffer-create "*excali library*")
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (excali-library-mode)
-        (setq excali--library-origin origin)
-        (if (null items)
-            (insert "The library is empty.  Select elements and run `excali-library-add'.\n")
-          (cl-loop for item in items for i from 0
-                   do (let ((start (point)))
-                        (insert-image (excali--library-thumbnail item))
-                        (insert " " (excali--library-item-label item i) "\n")
-                        (put-text-property start (point) 'excali-library-item item)
-                        (put-text-property start (point) 'mouse-face 'highlight))))
-        (goto-char (point-min)))
+      (excali-library-mode)
+      (setq excali--library-origin origin)
+      (excali--library-render-browser)
       (pop-to-buffer (current-buffer)))))
+
+(defun excali--origin-buffer (origin)
+  "Return ORIGIN if it is a live excali buffer, else the latest one, or nil."
+  (if (and (buffer-live-p origin)
+           (eq (buffer-local-value 'major-mode origin) 'excali-mode))
+      origin
+    (seq-find (lambda (b) (eq (buffer-local-value 'major-mode b) 'excali-mode))
+              (buffer-list))))
+
+(defun excali--library-item-at (&optional event)
+  "Return the library item at point, or at the click EVENT."
+  (get-text-property (if (mouse-event-p event) (posn-point (event-start event)) (point))
+                     'excali-library-item))
 
 (defun excali-library-insert-at-point (&optional event)
   "Insert the library item at point, or at the click EVENT."
   (interactive (list last-nonmenu-event))
-  (let* ((pos (if (mouse-event-p event) (posn-point (event-start event)) (point)))
-         (item (get-text-property pos 'excali-library-item))
-         (origin excali--library-origin))
-    (when (and item (buffer-live-p origin))
-      (with-current-buffer origin
-        (excali--insert-library-items (list item) (excali--view-center))))))
+  (let ((item (excali--library-item-at event))
+        (origin (excali--origin-buffer excali--library-origin)))
+    (cond ((null item) (user-error "No library item here"))
+          ((null origin) (user-error "No excali buffer to insert into"))
+          (t (with-current-buffer origin
+               (excali--insert-library-items (list item) (excali--view-center)))))))
+
+(defun excali--library-same-entry-p (a b)
+  "Return non-nil if A and B are the same library item.
+Items are compared by id, so a browser row still finds its item after
+the library was read again."
+  (or (eq a b) (equal (alist-get 'id a) (alist-get 'id b))))
+
+(defun excali--library-delete-items (items)
+  "Remove ITEMS from the personal library and save it."
+  (setq excali--library
+        (seq-remove (lambda (item)
+                      (seq-some (lambda (doomed) (excali--library-same-entry-p item doomed))
+                                items))
+                    (excali--library)))
+  (excali--save-library))
+
+(defun excali-library-delete-at-point ()
+  "Delete the library item at point, after confirming."
+  (interactive)
+  (let* ((item (or (excali--library-item-at) (user-error "No library item here")))
+         (index (or (cl-position item (excali--library) :test #'excali--library-same-entry-p)
+                    (user-error "That item is no longer in the library")))
+         (line (line-number-at-pos)))
+    (when (y-or-n-p (format "Delete %s from the library? "
+                            (excali--library-item-label item index)))
+      (excali--library-delete-items (list item))
+      (excali--library-render-browser)
+      (forward-line (1- (min line (max 1 (length (excali--library))))))
+      (message "Deleted; %d item%s left" (length (excali--library))
+               (if (= (length (excali--library)) 1) "" "s")))))
 
 (defvar-keymap excali-library-mode-map
   "RET" #'excali-library-insert-at-point
-  "<mouse-1>" #'excali-library-insert-at-point)
+  "<mouse-1>" #'excali-library-insert-at-point
+  "d" #'excali-library-delete-at-point
+  "DEL" #'excali-library-delete-at-point
+  "g" #'excali-library-browse-refresh
+  "o" #'excali-library-browse-official)
+
+(defun excali-library-browse-refresh ()
+  "Show the personal library again."
+  (interactive)
+  (excali--library-render-browser))
 
 (define-derived-mode excali-library-mode special-mode "Excali-Library"
-  "Browse the excali element library.")
+  "Browse the excali element library.
+\\{excali-library-mode-map}")
+
+;;;; The official collection (libraries.excalidraw.com)
+
+(defcustom excali-library-official-url "https://libraries.excalidraw.com/"
+  "Where the official library collection is served.
+It holds the index `libraries.json', download counts in `stats.json'
+and each library under `libraries/'.  These are the URLs the site's
+\"Add to Excalidraw\" button hands to excalidraw.com as `?addLibrary='."
+  :type 'string
+  :group 'excali)
+
+(defcustom excali-library-official-cache
+  (expand-file-name "excali/official-libraries.json" user-emacs-directory)
+  "File caching the official collection's index between sessions."
+  :type 'file
+  :group 'excali)
+
+(defvar excali--official-index nil
+  "The official collection: a list of index entries, or nil until loaded.
+Entries are alists as in `libraries.json', plus `downloads'.")
+
+(defun excali--official-url (path)
+  "Return the URL of PATH in the official collection."
+  (concat (file-name-as-directory excali-library-official-url) path))
+
+(defun excali--official-library-url (entry)
+  "Return the URL of the `.excalidrawlib' file of index ENTRY."
+  (excali--official-url (concat "libraries/" (alist-get 'source entry))))
+
+(defun excali--official-id (entry)
+  "Return the site's id of index ENTRY: its source, flattened.
+\"lipis/polygons.excalidrawlib\" becomes \"lipis-polygons\", the key of
+`stats.json' and the anchor of the library on the site."
+  (replace-regexp-in-string
+   "/" "-" (string-remove-suffix ".excalidrawlib" (downcase (alist-get 'source entry)))))
+
+;;;;; Fetching
+
+(defun excali--http-body (binary)
+  "Return the body of the HTTP response in the current buffer.
+Text is decoded as UTF-8 unless BINARY."
+  (goto-char (point-min))
+  (let ((body (if (re-search-forward "\r?\n\r?\n" nil t)
+                  (buffer-substring-no-properties (point) (point-max))
+                "")))
+    (if binary body (decode-coding-string body 'utf-8))))
+
+(defun excali--library-fetch (url callback &optional binary)
+  "Fetch URL in the background and call CALLBACK with its body.
+CALLBACK takes the body (a string, raw bytes if BINARY) and nil, or nil
+and an error message."
+  (url-retrieve
+   url
+   (lambda (status)
+     (let ((response (current-buffer))
+           (failure (plist-get status :error)))
+       (unwind-protect
+           (if failure
+               (funcall callback nil
+                        (format "%s: %s" url
+                                (pcase failure
+                                  (`(error http ,code) (format "HTTP %s" code))
+                                  (_ (error-message-string failure)))))
+             (funcall callback (excali--http-body binary) nil))
+         (kill-buffer response))))
+   nil t t))
+
+;;;;; The index
+
+(defun excali--parse-json (text)
+  "Parse JSON TEXT the way the library code expects."
+  (json-parse-string text :object-type 'alist :array-type 'array
+                     :null-object :null :false-object :false))
+
+(defun excali--official-parse-index (libraries stats)
+  "Return index entries from LIBRARIES and STATS, both parsed JSON.
+Each entry gets `downloads', its total from STATS or 0."
+  (let ((stats (and (consp stats) stats)))
+    (mapcar (lambda (entry)
+              (let ((counts (alist-get (intern (excali--official-id entry)) stats)))
+                (cons (cons 'downloads (or (alist-get 'total counts) 0)) entry)))
+            (append libraries nil))))
+
+(defun excali--official-load-cache ()
+  "Load the index cached in `excali-library-official-cache', if any."
+  (when (and (null excali--official-index) (file-readable-p excali-library-official-cache))
+    (let ((data (with-temp-buffer
+                  (insert-file-contents excali-library-official-cache)
+                  (excali--parse-json (buffer-string)))))
+      (setq excali--official-index
+            (excali--official-parse-index (alist-get 'libraries data) (alist-get 'stats data)))))
+  excali--official-index)
+
+(defun excali-library-official-refresh (&optional callback)
+  "Download the official collection's index again, then call CALLBACK."
+  (interactive)
+  (message "Fetching the Excalidraw library index...")
+  (excali--library-fetch
+   (excali--official-url "libraries.json")
+   (lambda (libraries error)
+     (if error
+         (message "Could not fetch the library index: %s" error)
+       (excali--library-fetch
+        (excali--official-url "stats.json")
+        (lambda (stats _error)
+          ;; Download counts are a nicety: carry on without them.
+          (let ((libraries (excali--parse-json libraries))
+                (stats (and stats (ignore-errors (excali--parse-json stats)))))
+            (make-directory (file-name-directory excali-library-official-cache) t)
+            (let ((coding-system-for-write 'utf-8-unix))
+              (write-region (json-serialize (list (cons 'libraries libraries)
+                                                  (cons 'stats (if (consp stats) stats :null)))
+                                            :null-object :null :false-object :false)
+                            nil excali-library-official-cache nil 'silent))
+            (setq excali--official-index (excali--official-parse-index libraries stats))
+            (message "Fetched %d libraries" (length excali--official-index))
+            (when callback (funcall callback)))))))))
+
+;;;;; Adding
+
+(defun excali--library-same-ids-p (a b)
+  "Return non-nil if items A and B hold elements with the same ids, in order.
+Restoring gives elements without an index a new `versionNonce', so
+libraries from the collection are recognized by their element ids."
+  (let ((ea (alist-get 'elements a)) (eb (alist-get 'elements b)))
+    (and (= (length ea) (length eb))
+         (cl-every (lambda (x y) (equal (alist-get 'id x) (alist-get 'id y))) ea eb))))
+
+(defun excali--official-add-items (entry items)
+  "Add library ITEMS from index ENTRY to the personal library.
+Items already present are skipped; unnamed ones take the library's
+name.  Return the number added."
+  (let* ((local (excali--library))
+         (new (mapcar (lambda (item)
+                        (let ((name (alist-get 'name item)))
+                          (if (and (stringp name) (not (string-empty-p name)))
+                              item
+                            (cons (cons 'name (alist-get 'name entry)) item))))
+                      (seq-remove (lambda (item)
+                                    (seq-some (lambda (l) (excali--library-same-ids-p l item))
+                                              local))
+                                  items))))
+    (when new
+      (setq excali--library (append new local))
+      (excali--save-library))
+    (message "Added %d item%s from %s%s" (length new) (if (= (length new) 1) "" "s")
+             (alist-get 'name entry)
+             (if (< (length new) (length items))
+                 (format " (%d already in the library)" (- (length items) (length new)))
+               ""))
+    (length new)))
+
+(defun excali--official-fetch-library (entry callback)
+  "Fetch the library of index ENTRY and call CALLBACK with its items."
+  (message "Fetching %s..." (alist-get 'name entry))
+  (excali--library-fetch
+   (excali--official-library-url entry)
+   (lambda (text error)
+     (if error
+         (message "Could not fetch %s: %s" (alist-get 'name entry) error)
+       (funcall callback (excali--parse-library text))))))
+
+;;;;; The list
+
+(defvar-local excali--official-filter nil "Regexp the collection list is narrowed to.")
+
+(defun excali--official-entry-text (entry)
+  "Return the text of ENTRY that a filter searches."
+  (mapconcat #'identity
+             (append (list (alist-get 'name entry) (or (alist-get 'description entry) ""))
+                     (mapcar (lambda (a) (or (alist-get 'name a) "")) (alist-get 'authors entry))
+                     (append (alist-get 'itemNames entry) nil))
+             " "))
+
+(defun excali--official-row (entry)
+  "Return the tabulated list row of index ENTRY."
+  (let ((items (alist-get 'itemNames entry)))
+    (list entry
+          (vector (alist-get 'name entry)
+                  (if items (number-to-string (length items)) "")
+                  (number-to-string (alist-get 'downloads entry))
+                  (or (alist-get 'updated entry) "")
+                  (mapconcat (lambda (a) (or (alist-get 'name a) "")) (alist-get 'authors entry) ", ")
+                  (replace-regexp-in-string "[\n\t ]+" " " (or (alist-get 'description entry) ""))))))
+
+(defun excali--official-numeric-sort (column)
+  "Return a predicate sorting rows by the number in COLUMN."
+  (lambda (a b) (< (string-to-number (aref (cadr a) column))
+                   (string-to-number (aref (cadr b) column)))))
+
+(defun excali--official-refresh-list ()
+  "Show the index in the current collection buffer."
+  (setq tabulated-list-entries
+        (mapcar #'excali--official-row
+                (seq-filter (lambda (e) (or (null excali--official-filter)
+                                            (string-match-p excali--official-filter
+                                                            (excali--official-entry-text e))))
+                            excali--official-index)))
+  (tabulated-list-print t))
+
+(defun excali-library-browse-official ()
+  "List the official Excalidraw library collection.
+\\<excali-library-official-mode-map>\\[excali-library-official-preview] previews a library, \
+\\[excali-library-official-add] adds it to the personal library."
+  (interactive)
+  (let ((origin (if (derived-mode-p 'excali-library-mode) excali--library-origin
+                  (current-buffer)))
+        (buffer (get-buffer-create "*excali official libraries*")))
+    (with-current-buffer buffer
+      (excali-library-official-mode)
+      (setq excali--library-origin origin)
+      (if (excali--official-load-cache)
+          (excali--official-refresh-list)
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert "Fetching the library index...\n"))
+        (excali-library-official-refresh
+         (lambda () (when (buffer-live-p buffer)
+                      (with-current-buffer buffer (excali--official-refresh-list)))))))
+    (pop-to-buffer buffer)))
+
+(defun excali--official-entry-at-point ()
+  "Return the index entry at point, or signal an error."
+  (or (tabulated-list-get-id) (user-error "No library here")))
+
+(defun excali-library-official-add (entry)
+  "Add every item of the official library ENTRY to the personal library."
+  (interactive (list (excali--official-entry-at-point)))
+  (excali--official-fetch-library
+   entry (lambda (items) (excali--official-add-items entry items))))
+
+(defun excali-library-official-filter (regexp)
+  "Show only libraries whose name, description, authors or items match REGEXP.
+An empty REGEXP shows them all."
+  (interactive (list (read-regexp "Filter libraries (regexp, empty for all)")))
+  (setq excali--official-filter (and regexp (not (string-empty-p regexp)) regexp))
+  (excali--official-refresh-list))
+
+(defun excali-library-official-update ()
+  "Fetch the index again and show it."
+  (interactive)
+  (let ((buffer (current-buffer)))
+    (excali-library-official-refresh
+     (lambda () (when (buffer-live-p buffer)
+                  (with-current-buffer buffer (excali--official-refresh-list)))))))
+
+(defun excali-library-official-visit (entry)
+  "Show the official library ENTRY on the collection's site."
+  (interactive (list (excali--official-entry-at-point)))
+  (browse-url (concat (file-name-as-directory excali-library-official-url)
+                      "#" (excali--official-id entry))))
+
+(defvar-keymap excali-library-official-mode-map
+  :parent tabulated-list-mode-map
+  "RET" #'excali-library-official-preview
+  "a" #'excali-library-official-add
+  "/" #'excali-library-official-filter
+  "g" #'excali-library-official-update
+  "o" #'excali-library-official-visit)
+
+(define-derived-mode excali-library-official-mode tabulated-list-mode "Excali-Libraries"
+  "List the official Excalidraw library collection.
+\\{excali-library-official-mode-map}"
+  (setq tabulated-list-format
+        (vector '("Name" 28 t)
+                (list "Items" 5 (excali--official-numeric-sort 1) :right-align t)
+                (list "Downloads" 9 (excali--official-numeric-sort 2) :right-align t)
+                '("Updated" 10 t)
+                '("Authors" 20 t)
+                '("Description" 0 nil))
+        tabulated-list-sort-key '("Updated" . t)
+        tabulated-list-padding 1)
+  (tabulated-list-init-header))
+
+;;;;; Previewing a library
+
+(defvar-local excali--official-entry nil "The index entry a preview shows.")
+(defvar-local excali--official-items nil "The items of the library a preview shows.")
+
+(defun excali-library-official-preview (entry)
+  "Show the items of the official library ENTRY.
+In the preview, RET inserts an item into the scene, `+' adds it to the
+personal library and `a' adds them all."
+  (interactive (list (excali--official-entry-at-point)))
+  (let ((origin excali--library-origin))
+    (excali--official-fetch-library
+     entry
+     (lambda (items)
+       (with-current-buffer (get-buffer-create (format "*excali library: %s*"
+                                                       (alist-get 'name entry)))
+         (excali-library-official-preview-mode)
+         (setq excali--library-origin origin
+               excali--official-entry entry
+               excali--official-items items)
+         (let ((inhibit-read-only t))
+           (erase-buffer)
+           (insert (propertize (alist-get 'name entry) 'face 'bold)
+                   "  by " (mapconcat (lambda (a) (or (alist-get 'name a) ""))
+                                      (alist-get 'authors entry) ", ")
+                   "\n" (or (alist-get 'description entry) "") "\n\n")
+           (excali--official-insert-preview-image entry (current-buffer) (point))
+           (excali--insert-item-rows
+            items (lambda (item i)
+                    (let ((name (alist-get 'name item)))
+                      (format "%d. %s" (1+ i)
+                              (if (and (stringp name) (not (string-empty-p name))) name
+                                (format "%s %d" (alist-get 'name entry) (1+ i)))))))
+           (goto-char (point-min)))
+         (pop-to-buffer (current-buffer)))))))
+
+(defun excali--official-insert-preview-image (entry buffer position)
+  "Fetch the site's preview picture of ENTRY and show it in BUFFER at POSITION."
+  (when-let* ((preview (alist-get 'preview entry))
+              (marker (with-current-buffer buffer (copy-marker position))))
+    (excali--library-fetch
+     (excali--official-url (format "libraries/%s?v=%s" preview (or (alist-get 'updated entry) 0)))
+     (lambda (data _error)
+       (when (and data (buffer-live-p buffer))
+         (with-current-buffer buffer
+           (let ((inhibit-read-only t)
+                 (image (ignore-errors
+                          (create-image data (if (string-suffix-p ".png" preview) 'png 'jpeg)
+                                        t :max-width 640 :max-height 360))))
+             (when image
+               (save-excursion
+                 (goto-char marker)
+                 (insert-image image)
+                 (insert "\n\n"))))))
+       (set-marker marker nil))
+     t)))
+
+(defun excali-library-official-add-at-point ()
+  "Add the previewed item at point to the personal library."
+  (interactive)
+  (excali--official-add-items excali--official-entry
+                              (list (or (excali--library-item-at) (user-error "No item here")))))
+
+(defun excali-library-official-add-all ()
+  "Add every previewed item to the personal library."
+  (interactive)
+  (excali--official-add-items excali--official-entry excali--official-items))
+
+(defvar-keymap excali-library-official-preview-mode-map
+  "RET" #'excali-library-insert-at-point
+  "<mouse-1>" #'excali-library-insert-at-point
+  "+" #'excali-library-official-add-at-point
+  "a" #'excali-library-official-add-all)
+
+(define-derived-mode excali-library-official-preview-mode special-mode "Excali-Library"
+  "Preview a library of the official collection.
+\\{excali-library-official-preview-mode-map}")
 
 (provide 'excali-library)
 ;;; excali-library.el ends here

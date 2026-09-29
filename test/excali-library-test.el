@@ -83,5 +83,202 @@
     (should (eq (car image) 'image))
     (should (eq (plist-get (cdr image) :type) 'png))))
 
+;;;; Deleting
+
+(defun excali-library-test--item-positions ()
+  "Return the start of each item row in the current browser buffer."
+  (let ((pos (point-min)) starts)
+    (while (setq pos (text-property-not-all pos (point-max) 'excali-library-item nil))
+      (push pos starts)
+      (setq pos (or (next-single-property-change pos 'excali-library-item) (point-max))))
+    (nreverse starts)))
+
+(defun excali-library-test--two-items ()
+  "Store two named one-rectangle items in the library, newest first."
+  (setq excali--library
+        (list (list (cons 'id "i2") (cons 'status "unpublished") (cons 'name "Second")
+                    (cons 'elements (vector (excali-test--rect 30 0))))
+              (list (cons 'id "i1") (cons 'status "unpublished") (cons 'name "First")
+                    (cons 'elements (vector (excali-test--rect 0 0)))))
+        excali--library-loaded t)
+  (excali--save-library))
+
+(ert-deftest excali-library-test-delete-at-point ()
+  "`d' in the browser deletes the item at point, after asking, and saves."
+  (excali-library-test--with-file
+   (excali-library-test--two-items)
+   (save-window-excursion
+     (excali-library-browse)
+     (with-current-buffer "*excali library*"
+       (should (eq (key-binding "d") 'excali-library-delete-at-point))
+       (goto-char (car (excali-library-test--item-positions)))
+       ;; Declining keeps it.
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+         (excali-library-delete-at-point))
+       (should (= (length (excali--library)) 2))
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
+         (excali-library-delete-at-point))
+       (should (equal (mapcar (lambda (i) (alist-get 'name i)) (excali--library)) '("First")))
+       ;; The buffer shows what is left, and the file holds it.
+       (should (= (length (excali-library-test--item-positions)) 1))
+       (setq excali--library nil excali--library-loaded nil)
+       (should (equal (mapcar (lambda (i) (alist-get 'name i)) (excali--library)) '("First")))
+       (goto-char (car (excali-library-test--item-positions)))
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
+         (excali-library-delete-at-point))
+       (should (null (excali--library)))
+       (should (string-match-p "empty" (buffer-string)))))))
+
+(ert-deftest excali-library-test-remove-by-name ()
+  "`excali-library-remove' deletes the items chosen by label."
+  (excali-library-test--with-file
+   (excali-library-test--two-items)
+   (excali-library-remove (list (excali--library-item-label (car (excali--library)) 0)))
+   (should (equal (mapcar (lambda (i) (alist-get 'name i)) (excali--library)) '("First")))
+   (excali-library-remove (excali--library-item-label (car (excali--library)) 0))
+   (should (null (excali--library)))))
+
+;;;; The official collection
+
+(defconst excali-library-test--fixtures
+  (expand-file-name "fixtures/library"
+                    (file-name-directory (or load-file-name buffer-file-name)))
+  "Trimmed real files from excalidraw/excalidraw-libraries.")
+
+(defvar excali-library-test--fetched nil "URLs the stubbed fetch was asked for.")
+
+(defmacro excali-library-test--offline (&rest body)
+  "Run BODY with a fresh library and collection, fetches served from fixtures.
+A URL is answered, synchronously, with the fixture named like its last
+path component; others fail as a 404 would."
+  `(excali-library-test--with-file
+    (let ((excali-library-official-cache (expand-file-name "official.json" dir))
+          (excali-library-official-url "https://libraries.excalidraw.com/")
+          (excali--official-index nil)
+          (excali-library-test--fetched nil))
+      (cl-letf (((symbol-function 'excali--library-fetch)
+                 (lambda (url callback &optional _binary)
+                   (push url excali-library-test--fetched)
+                   (let ((file (expand-file-name
+                                (file-name-nondirectory (car (split-string url "?")))
+                                excali-library-test--fixtures)))
+                     (if (file-readable-p file)
+                         (funcall callback (with-temp-buffer
+                                             (insert-file-contents file)
+                                             (buffer-string))
+                                  nil)
+                       (funcall callback nil (format "%s: 404" url)))))))
+        (save-window-excursion ,@body)))))
+
+(defun excali-library-test--entry (name)
+  "Return the collection's index entry called NAME."
+  (seq-find (lambda (e) (equal (alist-get 'name e) name)) excali--official-index))
+
+(ert-deftest excali-library-test-official-urls ()
+  "Library files and ids follow the site's scheme."
+  (let ((excali-library-official-url "https://libraries.excalidraw.com")
+        (entry '((source . "Lipis/Polygons.excalidrawlib"))))
+    (should (equal (excali--official-id entry) "lipis-polygons"))
+    (should (equal (excali--official-library-url entry)
+                   "https://libraries.excalidraw.com/libraries/Lipis/Polygons.excalidrawlib"))))
+
+(ert-deftest excali-library-test-official-index ()
+  "Fetching the index merges download counts and caches both."
+  (excali-library-test--offline
+   (let ((done nil))
+     (excali-library-official-refresh (lambda () (setq done t)))
+     (should done))
+   (should (member "https://libraries.excalidraw.com/libraries.json" excali-library-test--fetched))
+   (should (= (length excali--official-index) 3))
+   (let ((polygons (excali-library-test--entry "Polygons")))
+     (should (equal (alist-get 'source polygons) "lipis/polygons.excalidrawlib"))
+     (should (> (alist-get 'downloads polygons) 0)))
+   ;; A later session reads the cache instead of the network.
+   (let ((before (mapcar (lambda (e) (alist-get 'downloads e)) excali--official-index)))
+     (setq excali--official-index nil excali-library-test--fetched nil)
+     (excali--official-load-cache)
+     (should (equal (mapcar (lambda (e) (alist-get 'downloads e)) excali--official-index) before))
+     (should-not excali-library-test--fetched))))
+
+(ert-deftest excali-library-test-official-index-without-stats ()
+  "Without download counts the index still loads, counting 0."
+  (excali-library-test--offline
+   (let* ((index (expand-file-name "libraries.json" excali-library-test--fixtures))
+          (excali-library-test--fixtures (make-temp-file "excali-fix" t)))
+     (copy-file index (expand-file-name "libraries.json" excali-library-test--fixtures))
+     (excali-library-official-refresh)
+     (should (= (length excali--official-index) 3))
+     (should (cl-every (lambda (e) (= (alist-get 'downloads e) 0)) excali--official-index))
+     (setq excali--official-index nil)
+     (should (= (length (excali--official-load-cache)) 3))
+     (delete-directory excali-library-test--fixtures t))))
+
+(ert-deftest excali-library-test-official-list ()
+  "The collection lists every library; `/' filters over names and items."
+  (excali-library-test--offline
+   (excali-library-browse-official)
+   (with-current-buffer "*excali official libraries*"
+     (should (derived-mode-p 'excali-library-official-mode))
+     (should (= (length tabulated-list-entries) 3))
+     (should (string-match-p "Polygons" (buffer-string)))
+     (should (string-match-p "Information Architecture" (buffer-string)))
+     (should (eq (key-binding "a") 'excali-library-official-add))
+     ;; "cluster" is only an item name.
+     (excali-library-official-filter "cluster")
+     (should (equal (mapcar (lambda (row) (alist-get 'name (car row))) tabulated-list-entries)
+                    '("Information Architecture")))
+     (excali-library-official-filter "")
+     (should (= (length tabulated-list-entries) 3)))))
+
+(ert-deftest excali-library-test-official-add ()
+  "`a' adds a whole library once; unnamed items take the library's name."
+  (excali-library-test--offline
+   (excali-library-official-refresh)
+   (let ((polygons (excali-library-test--entry "Polygons"))
+         (ia (excali-library-test--entry "Information Architecture")))
+     (excali-library-official-add polygons)
+     (should (member "https://libraries.excalidraw.com/libraries/lipis/polygons.excalidrawlib"
+                     excali-library-test--fetched))
+     (should (= (length (excali--library)) 6))
+     (should (cl-every (lambda (i) (equal (alist-get 'name i) "Polygons")) (excali--library)))
+     ;; Again: nothing new, though restoring gave new version nonces.
+     (excali-library-official-add polygons)
+     (should (= (length (excali--library)) 6))
+     ;; Version 2 items keep their own names, and it all reaches the file.
+     (excali-library-official-add ia)
+     (should (= (length (excali--library)) 8))
+     (should (equal (sort (mapcar (lambda (i) (alist-get 'name i)) (seq-take (excali--library) 2))
+                          #'string<)
+                    '("area" "cluster")))
+     (setq excali--library nil excali--library-loaded nil)
+     (should (= (length (excali--library)) 8)))))
+
+(ert-deftest excali-library-test-official-preview ()
+  "A preview shows each item; `+' adds the one at point, `a' the rest."
+  (excali-library-test--offline
+   (excali-library-official-refresh)
+   (let ((ia (excali-library-test--entry "Information Architecture")))
+     (excali-library-official-preview ia)
+     (with-current-buffer "*excali library: Information Architecture*"
+       (should (string-match-p "inwardmovement\\|Information Architecture" (buffer-string)))
+       (let ((rows (excali-library-test--item-positions)))
+         (should (= (length rows) 2))
+         (goto-char (car rows))
+         (excali-library-official-add-at-point)
+         (should (= (length (excali--library)) 1))
+         (excali-library-official-add-all)
+         (should (= (length (excali--library)) 2))
+         (excali-library-official-add-all)
+         (should (= (length (excali--library)) 2)))))))
+
+(ert-deftest excali-library-test-http-body ()
+  "Response bodies are split from headers and decoded as UTF-8."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
+            (encode-coding-string "{\"name\":\"图\"}" 'utf-8))
+    (should (equal (excali--http-body nil) "{\"name\":\"图\"}"))
+    (should (equal (excali--http-body t) (encode-coding-string "{\"name\":\"图\"}" 'utf-8)))))
+
 (provide 'excali-library-test)
 ;;; excali-library-test.el ends here

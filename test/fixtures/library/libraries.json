@@ -1,0 +1,71 @@
+[
+  {
+    "name": "R Icons",
+    "description": "R and RStudio icons.",
+    "authors": [
+      {
+        "name": "Jumping Rivers",
+        "url": "https://www.jumpingrivers.com"
+      }
+    ],
+    "source": "jumpingrivers/r.excalidrawlib",
+    "preview": "jumpingrivers/r.png",
+    "created": "2021-08-22",
+    "updated": "2021-08-22",
+    "version": 1,
+    "id": "6TGNPXCpuVy"
+  },
+  {
+    "name": "Polygons",
+    "description": "Collection of regular polygons: triangle, pentagon, hexagon, octagon, decagon & dodecagon.",
+    "authors": [
+      {
+        "name": "Lipis",
+        "url": "https://twitter.com/lipis"
+      }
+    ],
+    "source": "lipis/polygons.excalidrawlib",
+    "preview": "lipis/polygons.png",
+    "created": "2020-12-02",
+    "updated": "2020-12-02",
+    "version": 1,
+    "id": "3MQwFMPiYkC"
+  },
+  {
+    "name": "Information Architecture",
+    "description": "A visual vocabulary for describing information architecture and interaction design, by Jesse James Garrett.",
+    "authors": [
+      {
+        "name": "inwardmovement",
+        "github": "https://github.com/inwardmovement",
+        "twitter": "",
+        "url": "https://inwardmovement.github.io"
+      }
+    ],
+    "source": "inwardmovement/information-architecture.excalidrawlib",
+    "preview": "inwardmovement/information-architecture.jpg",
+    "created": "2021-01-11",
+    "updated": "2022-01-10",
+    "version": 2,
+    "itemNames": [
+      "page",
+      "file",
+      "flow reference",
+      "page stack",
+      "file stack",
+      "cluster",
+      "decision point",
+      "conditional branch",
+      "conditonal selector",
+      "concurrent set",
+      "continuation x",
+      "continuation y",
+      "area",
+      "iterative area",
+      "conditional area",
+      "flow area x",
+      "flow area y"
+    ],
+    "id": "6llg42UDA6i"
+  }
+]
