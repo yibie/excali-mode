@@ -26,8 +26,9 @@ and it needs Emacs 32 (master) — the first Emacs with the canvas API.
 - Labels in shapes and on arrows, text wrapping and fonts as upstream
   lays them out (CJK included), dark mode.
 - Images (PNG, SVG, JPEG, GIF, WebP), frames with clipping, the element
-  library (=.excalidrawlib=), and PNG/SVG export with the scene embedded
-  so Excalidraw can open the export again.
+  library (=.excalidrawlib=) with the official collection of
+  libraries.excalidraw.com one command away, and PNG/SVG export with the
+  scene embedded so Excalidraw can open the export again.
 - Smooth on large scenes: only damaged areas repaint, panning reuses
   pixels, zooming shows an instant preview, and on macOS a CoreAnimation
   layer bypasses Emacs's image refresh.
@@ -138,7 +139,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =s-k=, click a link icon | set a link (URL or =?element=ID=), follow it |
 | =s-'=, =M-s= | grid, object snapping (super at the press suppresses/inverts) |
 | =M-D= | toggle the dark theme |
-| =C-c l a=, =C-c l i=, =C-c l b= | library: add selection, insert items, browse |
+| =C-c l a=, =C-c l i=, =C-c l b=, =C-c l d=, =C-c l o= | library: add selection, insert items, browse, delete items, official collection |
 | =M-s-c= =M-s-v=, =s-<= =s->= | copy / paste styles, font size |
 | wheel, =C-=wheel / pinch, middle or right drag | pan, zoom, pan |
 | =s-== =s--= =s-0= (=C-x C-= - 0=), =!= =@= =#= | zoom, zoom to fit all / selection |
@@ -193,6 +194,32 @@ registered with the font backend (CoreText on macOS with Homebrew
 Pango, fontconfig elsewhere) when excali loads; without them text falls
 back to system fonts, see =excali-font-families= and
 =M-x excali-font-report=.
+
+* Element library
+
+The personal library lives in =excali-library-file= in Excalidraw's
+=.excalidrawlib= format, so it moves freely between excali and
+excalidraw.com.  =C-c l a= adds the selection, =C-c l i= inserts items,
+=M-x excali-library-import= / =excali-library-export= merge and write
+library files.
+
+=C-c l b= browses it as thumbnails: =RET= or a click inserts the item
+into the scene, =d= deletes it (after asking), =g= redraws, =o= opens
+the official collection.  =C-c l d= deletes items by name.
+
+=C-c l o= (=excali-library-browse-official=) lists the official
+collection of [[https://libraries.excalidraw.com][libraries.excalidraw.com]]: name, item count, downloads,
+last update, authors and description.  =RET= previews a library (the
+site's picture and every item), =a= adds all of it, =/= filters by a
+regexp over names, descriptions, authors and item names, =g= fetches
+the index again, =o= shows the library on the site; =S= sorts by the
+column at point.  In a preview, =RET= inserts the item at point, =+=
+adds it to the personal library, =a= adds them all.  Items keep their
+names; unnamed ones take the library's.  Adding a library twice adds
+nothing twice.  The index is fetched from
+=excali-library-official-url= (the files the site's "Add to Excalidraw"
+button hands to excalidraw.com) and cached in
+=excali-library-official-cache=.
 
 * Images, frames and export
 
@@ -258,7 +285,7 @@ No dark-mode export yet.
 - =excali-tools.el= — laser, eye dropper, autoshape, lasso.
 - =excali-bucket.el= — bucket fill.
 - =excali-library.el= — =.excalidrawlib= library: add, insert, import,
-  export, browse.
+  export, browse, delete; the official collection.
 - =excali-edit.el= — drags, mouse commands, text, grouping, z-order.
 - =excali-cursor.el= — pointer shapes (upstream's CSS cursors; on macOS the
   module shows them over the canvas, elsewhere the nearest Emacs =pointer=).

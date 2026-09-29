@@ -171,7 +171,8 @@ or deselect."
   "s-L" #'excali-toggle-lock
   "s-k" #'excali-set-link
   "C-c l a" #'excali-library-add "C-c l i" #'excali-library-insert
-  "C-c l b" #'excali-library-browse
+  "C-c l b" #'excali-library-browse "C-c l d" #'excali-library-remove
+  "C-c l o" #'excali-library-browse-official
   "s-z" #'excali-undo "s-Z" #'excali-redo "s-y" #'excali-redo
   "C-/" #'excali-undo "C-_" #'excali-undo "C-x u" #'excali-undo
   "C-?" #'excali-redo "C-M-_" #'excali-redo

@@ -1,0 +1,71 @@
+{
+  "type": "excalidrawlib",
+  "version": 2,
+  "source": "https://app.excalidraw.com",
+  "libraryItems": [
+    {
+      "status": "published",
+      "elements": [
+        {
+          "type": "ellipse",
+          "version": 206,
+          "versionNonce": 207366786,
+          "isDeleted": false,
+          "id": "9_gp4hHBq883Qq99c3AWh",
+          "fillStyle": "solid",
+          "strokeWidth": 1,
+          "strokeStyle": "solid",
+          "roughness": 0,
+          "opacity": 100,
+          "angle": 0,
+          "x": 1156.6455078125,
+          "y": 364.1334228515625,
+          "strokeColor": "#000000",
+          "backgroundColor": "#fff",
+          "width": 40,
+          "height": 40,
+          "seed": 61795038,
+          "groupIds": [],
+          "strokeSharpness": "round",
+          "boundElements": [],
+          "updated": 1641285645643
+        }
+      ],
+      "id": "DwGLrT3gAMg1f-FOKqtLE",
+      "created": 1641294212524,
+      "name": "cluster"
+    },
+    {
+      "status": "published",
+      "elements": [
+        {
+          "type": "rectangle",
+          "version": 214,
+          "versionNonce": 258210206,
+          "isDeleted": false,
+          "id": "bF8PwMu7HRZ95aLw4SmYh",
+          "fillStyle": "solid",
+          "strokeWidth": 1,
+          "strokeStyle": "solid",
+          "roughness": 0,
+          "opacity": 100,
+          "angle": 0,
+          "x": 781.5537109375,
+          "y": 153.4708709716797,
+          "strokeColor": "#000000",
+          "backgroundColor": "#fff",
+          "width": 160,
+          "height": 160,
+          "seed": 2070248770,
+          "groupIds": [],
+          "strokeSharpness": "round",
+          "boundElements": [],
+          "updated": 1641285645644
+        }
+      ],
+      "id": "t_F8geJKP5CordOQBiz4v",
+      "created": 1641294162318,
+      "name": "area"
+    }
+  ]
+}
