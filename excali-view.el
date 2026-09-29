@@ -592,21 +592,48 @@ the text area, so fall back to the absolute pointer position."
          (y (/ (float (cdr xy)) excali--zoom)))
     (cons (- x excali--scroll-x) (- y excali--scroll-y))))
 
-(defun excali-wheel (event)
-  "Pan on plain wheel EVENT, zoom with control."
-  (interactive "e")
+(defcustom excali-wheel-step 40
+  "Logical pixels one wheel notch pans when its event carries no pixel delta."
+  :type 'number
+  :group 'excali)
+
+(defun excali--wheel-delta (event)
+  "Return (DX . DY) to pan the view by for wheel EVENT.
+The canvas moves the way Emacs scrolls a buffer on the same system:
+`wheel-up' moves it down and `wheel-down' up, as `mwheel-scroll' moves
+text, and `wheel-left' moves it left and `wheel-right' right, swapped by
+`mouse-wheel-flip-direction'.  With shift, a vertical wheel pans
+sideways, as upstream does.  The direction comes from the event's name:
+window systems disagree on the sign of the pixel delta, and Windows
+reports horizontal amounts on its y part, so the delta only says how
+far."
   (let* ((raw (nth 4 event))
          (basic (event-basic-type event))
-         (step (if (and (consp raw) (numberp (cdr raw))) nil 40.0))
-         (dx (cond (step (pcase basic ('wheel-left step) ('wheel-right (- step)) (_ 0.0)))
-                   ((numberp (car raw)) (- (float (car raw))))
-                   (t 0.0)))
-         (dy (cond (step (pcase basic ('wheel-up step) ('wheel-down (- step)) (_ 0.0)))
-                   (t (- (float (cdr raw)))))))
-    (if (memq 'control (event-modifiers event))
-        (excali--zoom-at (if (memq basic '(wheel-up)) 1.1 (/ 1 1.1))
-                        (posn-x-y (event-start event)))
-      (excali--pan dx dy))))
+         (horizontal (memq basic '(wheel-left wheel-right)))
+         (delta (and (consp raw)
+                     (seq-find (lambda (v) (and (numberp v) (not (zerop v))))
+                               (if horizontal (list (car raw) (cdr raw))
+                                 (list (cdr raw) (car raw))))))
+         (amount (if delta (abs (float delta)) (float excali-wheel-step)))
+         (flip (if mouse-wheel-flip-direction -1 1))
+         (d (pcase basic
+              ('wheel-up (cons 0.0 amount))
+              ('wheel-down (cons 0.0 (- amount)))
+              ('wheel-left (cons (* flip (- amount)) 0.0))
+              ('wheel-right (cons (* flip amount) 0.0))
+              (_ (cons 0.0 0.0)))))
+    (if (and (memq 'shift (event-modifiers event)) (not horizontal))
+        (cons (cdr d) 0.0)
+      d)))
+
+(defun excali-wheel (event)
+  "Pan on wheel EVENT (sideways with shift), zoom with control."
+  (interactive "e")
+  (if (memq 'control (event-modifiers event))
+      (excali--zoom-at (if (eq (event-basic-type event) 'wheel-up) 1.1 (/ 1 1.1))
+                       (posn-x-y (event-start event)))
+    (let ((d (excali--wheel-delta event)))
+      (excali--pan (car d) (cdr d)))))
 
 (defun excali--pan (dx dy)
   "Scroll the view by DX, DY logical pixels.

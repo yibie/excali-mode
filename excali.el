@@ -119,6 +119,7 @@ or deselect."
   "<remap> <mouse-secondary-save-then-kill>" #'ignore
   "<wheel-up>" #'excali-wheel "<wheel-down>" #'excali-wheel
   "<wheel-left>" #'excali-wheel "<wheel-right>" #'excali-wheel
+  "S-<wheel-up>" #'excali-wheel "S-<wheel-down>" #'excali-wheel
   "C-<wheel-up>" #'excali-wheel "C-<wheel-down>" #'excali-wheel
   "<pinch>" #'excali-pinch
   ;; Tools.
