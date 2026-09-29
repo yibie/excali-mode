@@ -123,7 +123,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | drag inside the selection box | move |
 | corner handles, border, round handle | resize (shift keeps ratio, meta from center), rotate (shift snaps 15°) |
 | double-click | enter group, edit text, add or edit a shape's label, add text |
-| =s=, =g=, =F= | style panel, background, font |
+| =s=, =g=, =F= | style panel (as upstream's; each property opens a panel of its values, colors a picker: =q=..=b= colors, =1=..=5= shades, =#= hex), background, font |
 | =H=, =V= | flip horizontally / vertically |
 | =TAB= | cycle rectangle / diamond / ellipse |
 | arrows, =S-=arrows | nudge 1 / 5 |
@@ -140,7 +140,7 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =M-D= | toggle the dark theme |
 | =C-c l a=, =C-c l i=, =C-c l b= | library: add selection, insert items, browse |
 | =M-s-c= =M-s-v=, =s-<= =s->= | copy / paste styles, font size |
-| wheel, =C-=wheel / pinch, middle drag | pan, zoom, pan |
+| wheel, =C-=wheel / pinch, middle or right drag | pan, zoom, pan |
 | =s-== =s--= =s-0= (=C-x C-= - 0=), =!= =@= =#= | zoom, zoom to fit all / selection |
 | =PgUp= =PgDn= (with shift: horizontal) | page |
 | =9= | insert an image file at the view centre |

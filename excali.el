@@ -105,6 +105,7 @@ or deselect."
   "M-s-<down-mouse-1>" #'excali-mouse-down
   "<double-down-mouse-1>" #'excali-double-click
   "<down-mouse-2>" #'excali-mouse-pan
+  "<down-mouse-3>" #'excali-mouse-pan
   "<mouse-movement>" #'excali-mouse-move
   ;; The canvas is one character: Emacs's region and secondary selection
   ;; commands would only highlight it whole, whichever click reaches them.

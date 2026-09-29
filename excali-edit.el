@@ -327,9 +327,10 @@ adds to it."
     (excali--render)))
 
 (defun excali-mouse-pan (event)
-  "Pan the view while the middle button, pressed at EVENT, is held."
+  "Pan the view while the button pressed at EVENT is held.
+The middle and right buttons pan."
   (interactive "e")
-  (excali--pan-drag event 'mouse-2))
+  (excali--pan-drag event (event-basic-type event)))
 
 (defun excali--await-release ()
   "Consume input until the mouse button that started this command is released.
