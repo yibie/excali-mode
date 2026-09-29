@@ -1,0 +1,22 @@
+---
+title: Simple Component Types Test
+layout: dagre
+---
+
+# Define a simple component type
+componentType service {
+  shape: rectangle;
+  style {
+    fill: "#e8f5e9";
+    strokeColor: "#4caf50";
+    strokeWidth: 2;
+    rounded: 8;
+  }
+}
+
+# Use the component type
+UserService [User Service] { type: service }
+OrderService [Order Service] { type: service }
+
+# Connection
+UserService -> OrderService : "API call"

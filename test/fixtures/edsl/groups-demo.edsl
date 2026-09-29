@@ -1,0 +1,140 @@
+---
+layout: dagre
+direction: LR
+nodeSpacing: 100
+rankSpacing: 150
+---
+
+# Groups Demo - Testing New Grouping Features
+# Demonstrates basic groups, flow groups, and semantic groups
+
+# External clients
+client[Web Client] {
+  shape: "rectangle";
+  strokeColor: "#3b82f6";
+  backgroundColor: "#dbeafe";
+  width: 120;
+  height: 60;
+}
+
+mobile[Mobile App] {
+  shape: "rectangle";
+  strokeColor: "#3b82f6";
+  backgroundColor: "#dbeafe";
+  width: 120;
+  height: 60;
+}
+
+# API Gateway (ungrouped)
+gateway[API Gateway] {
+  shape: "rectangle";
+  strokeColor: "#f59e0b";
+  backgroundColor: "#fef3c7";
+  strokeWidth: 3;
+  width: 180;
+  height: 80;
+}
+
+# Service Group - Basic grouping
+service "Core Services" {
+  authservice[Auth Service] {
+    shape: "rectangle";
+    strokeColor: "#8b5cf6";
+    backgroundColor: "#f3e8ff";
+    width: 150;
+    height: 70;
+  }
+
+  userservice[User Service] {
+    shape: "rectangle";
+    strokeColor: "#10b981";
+    backgroundColor: "#d1fae5";
+    width: 150;
+    height: 70;
+  }
+
+  orderservice[Order Service] {
+    shape: "rectangle";
+    strokeColor: "#be123c";
+    backgroundColor: "#fecdd3";
+    width: 150;
+    height: 70;
+  }
+  
+  # Inter-service communication
+  authservice -> userservice: "Validate"
+  userservice -> orderservice: "User Info"
+}
+
+# Layer Group - Infrastructure layer
+layer "Data Layer" {
+  authdb[Auth DB] {
+    shape: "ellipse";
+    strokeColor: "#6366f1";
+    backgroundColor: "#e0e7ff";
+    fill: "hachure";
+    width: 140;
+    height: 80;
+  }
+
+  userdb[User DB] {
+    shape: "ellipse";
+    strokeColor: "#059669";
+    backgroundColor: "#a7f3d0";
+    fill: "hachure";
+    width: 140;
+    height: 80;
+  }
+
+  orderdb[Order DB] {
+    shape: "ellipse";
+    strokeColor: "#be123c";
+    backgroundColor: "#fda4af";
+    fill: "hachure";
+    width: 140;
+    height: 80;
+  }
+}
+
+# Flow Group - Request processing flow
+flow "Request Flow" {
+  validate[Validate Request] {
+    shape: "rectangle";
+    width: 140;
+    height: 60;
+  }
+
+  process[Process Data] {
+    shape: "rectangle";
+    width: 140;
+    height: 60;
+  }
+
+  respond[Send Response] {
+    shape: "rectangle";
+    width: 140;
+    height: 60;
+  }
+  
+  # Flow connections
+  validate -> process
+  process -> respond
+}
+
+# External connections
+client -> gateway: "HTTPS"
+mobile -> gateway: "HTTPS"
+
+# Gateway to services
+gateway -> authservice: "Auth"
+gateway -> userservice: "Users"
+gateway -> orderservice: "Orders"
+
+# Service to database connections
+authservice -> authdb: "Store"
+userservice -> userdb: "Store"
+orderservice -> orderdb: "Store"
+
+# Flow integration
+gateway -> validate: "Route"
+respond -> gateway: "Return"

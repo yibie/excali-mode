@@ -1,0 +1,111 @@
+---
+layout: dagre
+theme: dark
+---
+componentType service {
+    shape: rectangle;
+    style {
+        fill: "#e3f2fd";
+        strokeColor: "#1976d2";
+        strokeWidth: 2;
+        rounded: 8;
+    }
+};
+
+componentType database {
+    shape: cylinder;
+    style {
+        fill: "#f3e5f5";
+        strokeColor: "#7b1fa2";
+        strokeWidth: 2;
+    }
+};
+
+lb[Load Balancer] { type: service };
+api1[API Server 1] { type: service };
+api2[API Server 2] { type: service };
+api3[API Server 3] { type: service };
+cache[Redis Cache] { type: service };
+db[Database] { type: database };
+
+connection {
+    from: "lb";
+    to: "api1";
+    style {
+        type: arrow;
+        label: "HTTPS";
+        color: "#2196f3";
+        width: 2;
+        routing: straight;
+    }
+};
+
+connections {
+    from: "lb";
+    to: ["api2", "api3"];
+    style {
+        type: arrow;
+        label: "HTTPS";
+        color: "#2196f3";
+        width: 2;
+        routing: straight;
+    }
+};
+
+connection {
+    from: "api1";
+    to: "cache";
+    style {
+        type: dashed;
+        label: "Cache";
+        color: "#ff5722";
+        strokeStyle: dashed;
+    }
+};
+
+connections {
+    from: "cache";
+    to: ["api2", "api3"];
+    style {
+        type: dashed;
+        label: "Cache";
+        color: "#ff5722";
+        strokeStyle: dashed;
+    }
+};
+
+connections {
+    from: "api1";
+    to: ["db"];
+    style {
+        type: arrow;
+        label: "Query";
+        color: "#4caf50";
+        width: 3;
+        strokeStyle: solid;
+    }
+};
+
+connections {
+    from: "api2";
+    to: ["db"];
+    style {
+        type: arrow;
+        label: "Query";
+        color: "#4caf50";
+        width: 3;
+        strokeStyle: solid;
+    }
+};
+
+connections {
+    from: "api3";
+    to: ["db"];
+    style {
+        type: arrow;
+        label: "Query";
+        color: "#4caf50";
+        width: 3;
+        strokeStyle: solid;
+    }
+};

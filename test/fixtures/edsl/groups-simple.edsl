@@ -1,0 +1,40 @@
+---
+layout: dagre
+direction: TB
+---
+
+# Simple Group Test
+
+# Ungrouped nodes
+start[Start]
+end[End]
+
+# Basic group
+group "Group A" {
+  a1[Node A1]
+  a2[Node A2]
+  a1 -> a2
+}
+
+# Flow group
+flow "Processing Flow" {
+  step1[Step 1]
+  step2[Step 2]
+  step3[Step 3]
+}
+
+# Service group (semantic)
+service "API Service" {
+  api[API Endpoint]
+  handler[Handler]
+  db[Database]
+  
+  api -> handler
+  handler -> db
+}
+
+# Connections between groups
+start -> a1
+a2 -> step1
+step3 -> api
+db -> end

@@ -1,0 +1,101 @@
+---
+layout: dagre
+direction: LR
+nodeSpacing: 80
+rankSpacing: 120
+---
+
+# Order State Machine
+# Order lifecycle state transitions
+
+# Initial state
+initial[Initial] {
+  shape: "ellipse";
+  strokeColor: "#000000";
+  backgroundColor: "#000000";
+  width: 40;
+  height: 40;
+}
+
+# Order states
+draft[Draft Order] {
+  shape: "rectangle";
+  strokeColor: "#6b7280";
+  backgroundColor: "#f3f4f6";
+  width: 140;
+  height: 70;
+}
+
+pending_payment[Pending Payment] {
+  shape: "rectangle";
+  strokeColor: "#f59e0b";
+  backgroundColor: "#fef3c7";
+  width: 180;
+  height: 70;
+}
+
+paid[Order Paid] {
+  shape: "rectangle";
+  strokeColor: "#10b981";
+  backgroundColor: "#d1fae5";
+  width: 140;
+  height: 70;
+  strokeWidth: 3;
+}
+
+preparing[Preparing Order] {
+  shape: "rectangle";
+  strokeColor: "#06b6d4";
+  backgroundColor: "#cffafe";
+  width: 160;
+  height: 70;
+}
+
+shipping[In Transit] {
+  shape: "rectangle";
+  strokeColor: "#ea580c";
+  backgroundColor: "#fed7aa";
+  width: 130;
+  height: 70;
+}
+
+delivered[Delivered] {
+  shape: "rectangle";
+  strokeColor: "#16a34a";
+  backgroundColor: "#bbf7d0";
+  width: 120;
+  height: 70;
+  strokeWidth: 3;
+}
+
+cancelled[Cancelled] {
+  shape: "rectangle";
+  strokeColor: "#374151";
+  backgroundColor: "#e5e7eb";
+  width: 120;
+  height: 70;
+}
+
+completed[Completed] {
+  shape: "ellipse";
+  strokeColor: "#059669";
+  backgroundColor: "#34d399";
+  width: 120;
+  height: 80;
+  strokeWidth: 4;
+  fill: "hachure";
+}
+
+# State transitions
+initial -> draft: Create Order
+draft -> pending_payment: Submit Order
+pending_payment -> paid: Payment Success
+paid -> preparing: Process Order
+preparing -> shipping: Ship Order
+shipping -> delivered: Delivery Success
+delivered -> completed: Confirm Receipt
+
+# Cancellation paths
+draft -> cancelled: Cancel Draft
+pending_payment -> cancelled: Cancel Order
+cancelled -> completed: Order Closed

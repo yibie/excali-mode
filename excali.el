@@ -58,6 +58,7 @@
 (require 'excali-library)
 (require 'excali-image)
 (require 'excali-export)
+(require 'excali-dsl)
 (require 'excali-bench)
 
 ;;;; Keys

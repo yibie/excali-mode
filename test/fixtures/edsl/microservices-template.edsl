@@ -1,0 +1,47 @@
+---
+layout: elk
+theme: light
+---
+
+# Define a microservices architecture template
+template microservices {
+  layers {
+    "Client Tier" {
+      components: ["Web App", "Mobile App"]
+      layout: horizontal
+    }
+    "Gateway Tier" {
+      components: ["API Gateway", "Load Balancer"]
+      layout: horizontal
+    }
+    "Service Tier" {
+      components: ["User Service", "Order Service", "Payment Service"]
+      layout: horizontal
+    }
+    "Data Tier" {
+      components: ["User DB", "Order DB", "Cache"]
+      layout: horizontal
+    }
+  }
+
+  connections {
+    pattern: each-to-next-layer
+  }
+
+  layout {
+    type: layered
+    direction: top-to-bottom
+    spacing: {
+      x: 100
+      y: 80
+      node_spacing: 50
+      layer_spacing: 120
+    }
+  }
+}
+
+# Use the template in a diagram
+diagram "E-commerce Microservices" {
+  type: architecture
+  template: microservices
+}
