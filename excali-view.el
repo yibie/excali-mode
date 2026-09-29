@@ -130,11 +130,28 @@ label get \"label-hole\" [X Y W H], the box cut out of the stroke.
 See `excali--text-native-extras' in excali-text.el."
   (excali--text-native-extras element))
 
+(defvar excali--compiled-cache (make-hash-table :test #'eq :weakness 'key)
+  "Module-compiled elements by their native vector.
+A native vector is replaced whenever its element changes, so its
+compiled form stays valid for as long as the vector lives.")
+
+(defun excali--compiled (native)
+  "Return NATIVE compiled by the module, read once instead of every frame.
+Without `excali-native-element-compile', NATIVE itself."
+  (or (gethash native excali--compiled-cache)
+      (puthash native
+               (or (and (fboundp 'excali-native-element-compile)
+                        (excali-native-element-compile native))
+                   native)
+               excali--compiled-cache)))
+
 (defun excali--visible-elements ()
-  "Return live elements, then editor overlays, as a native vector."
+  "Return live elements, then editor overlays, as a native vector.
+Elements come compiled (see `excali--compiled'); overlays, rebuilt
+every frame, as plain vectors."
   (vconcat (delq nil (mapcar (lambda (e)
                                (unless (excali--get e 'isDeleted)
-                                 (excali--native-element e)))
+                                 (excali--compiled (excali--native-element e))))
                              excali--elements))
            (excali--overlay-natives)))
 
@@ -198,6 +215,7 @@ FRAME defaults to the selected frame.  Resolve `auto' in
     excali--rendered-origin excali--pan-remainder excali--last-render-time
     excali--last-stats excali--preview-snapshot excali--preview-origin
     excali--preview-timer excali--pointer-surfaces excali--pointer-stamp
+    excali--pointer-focus excali--rendered-items excali--rendered-key
     excali--cursor excali--cursor-view excali--cursor-view-shown
     excali--view-overlay excali--view-stamp)
   "Buffer-local variables that belong to one window's view.")
@@ -398,24 +416,92 @@ so only the newly exposed strips need painting."
   (let ((color (alist-get 'viewBackgroundColor (alist-get 'appState excali--doc))))
     (and (stringp color) (string-prefix-p "#" color) color)))
 
+(defvar-local excali--rendered-items nil
+  "The elements and overlays the last render drew, as passed to the module.")
+(defvar-local excali--rendered-key nil
+  "The view the last render drew with; see `excali--render-key'.")
+
+(defun excali--render-key ()
+  "Return what, besides the items, the pixels of a render depend on."
+  (list excali--fb excali--zoom excali--scroll-x excali--scroll-y excali--canvas-size
+        excali--pixel-scale excali--theme (excali--canvas-color)))
+
+(declare-function excali-native-element-boxes "excali-module")
+
+(defun excali--changed-damage (old new)
+  "Return the device rectangle where items NEW differ from the drawn OLD.
+Compiled elements are compared by identity, since an element that
+changes gets a new one; overlays, rebuilt every frame, by value.
+Return `none' when nothing changed, nil when a full repaint is simpler:
+elements changed order, a frame changed (its name and clip reach beyond
+its box), or the changes cover most of the view."
+  (let ((old-set (make-hash-table :test #'eq :size (length old)))
+        (new-set (make-hash-table :test #'eq :size (length new)))
+        (old-ov nil) (new-ov nil) changed)
+    (seq-doseq (x old) (if (vectorp x) (push x old-ov) (puthash x t old-set)))
+    (seq-doseq (x new) (if (vectorp x) (push x new-ov) (puthash x t new-set)))
+    (seq-doseq (x new) (unless (or (vectorp x) (gethash x old-set)) (push x changed)))
+    (seq-doseq (x old) (unless (or (vectorp x) (gethash x new-set)) (push x changed)))
+    (unless (equal old-ov new-ov)
+      (setq changed (append (seq-difference old-ov new-ov)
+                            (seq-difference new-ov old-ov) changed)))
+    (cond
+     ((and (null changed)
+           ;; Same elements: the same order too?
+           (seq-every-p #'identity (cl-mapcar #'eq (seq-remove #'vectorp old)
+                                              (seq-remove #'vectorp new))))
+      'none)
+     ((null changed) nil)
+     (t
+      (let* ((boxes (excali-native-element-boxes changed))
+             (scale (* excali--zoom excali--pixel-scale))
+             (margin 4) x1 y1 x2 y2)
+        (unless (seq-some (lambda (b) (and b (aref b 4))) boxes)
+          (seq-doseq (b boxes)
+            (when b
+              (let ((bx1 (* (+ (aref b 0) excali--scroll-x) scale))
+                    (by1 (* (+ (aref b 1) excali--scroll-y) scale))
+                    (bx2 (* (+ (aref b 2) excali--scroll-x) scale))
+                    (by2 (* (+ (aref b 3) excali--scroll-y) scale)))
+                (setq x1 (if x1 (min x1 bx1) bx1) y1 (if y1 (min y1 by1) by1)
+                      x2 (if x2 (max x2 bx2) bx2) y2 (if y2 (max y2 by2) by2)))))
+          (when x1
+            (let* ((w (car excali--canvas-size)) (h (cdr excali--canvas-size))
+                   (rx1 (max 0 (floor (- x1 margin)))) (ry1 (max 0 (floor (- y1 margin))))
+                   (rx2 (min w (ceiling (+ x2 margin)))) (ry2 (min h (ceiling (+ y2 margin)))))
+              (cond ((or (<= rx2 rx1) (<= ry2 ry1)) 'none)
+                    ;; Most of the view: one full pass is as quick.
+                    ((> (* (- rx2 rx1) (- ry2 ry1)) (* 0.6 w h)) nil)
+                    (t (list rx1 ry1 rx2 ry2)))))))))))
+
 (defun excali--render (&optional damage)
   "Render the scene and present it.
-DAMAGE nil repaints everything.  `scroll' means only the view moved; a
-device rectangle (X1 Y1 X2 Y2) marks changed scene content.  See
-`excali--plan-repaint' for how moved views reuse existing pixels.  A
-zoom preview on screen is replaced by a full render."
+DAMAGE nil repaints what changed since the last render (see
+`excali--changed-damage'), `full' everything.  `scroll' means only the
+view moved; a device rectangle (X1 Y1 X2 Y2) marks changed scene
+content.  See `excali--plan-repaint' for how moved views reuse existing
+pixels.  A zoom preview on screen is replaced by a full render."
   (excali--cancel-preview)
   (when excali--fb
     (let* ((t0 (float-time))
-           (plan (excali--plan-repaint damage))
-           (drawn (if (eq plan 'none)
-                      0
-                    (excali-native-fb-render
-                     excali--fb excali--pixel-scale excali--zoom
-                     excali--scroll-x excali--scroll-y
-                     (excali--visible-elements) plan
-                     (excali--canvas-color) (eq excali--theme 'dark)))))
-      (excali--present-frame t0 drawn nil))))
+           (items (excali--visible-elements))
+           (key (excali--render-key))
+           (damage (if (and (null damage) excali--rendered-items
+                            (fboundp 'excali-native-element-boxes)
+                            (equal key excali--rendered-key))
+                       (excali--changed-damage excali--rendered-items items)
+                     (if (eq damage 'full) nil damage))))
+      (setq excali--rendered-items items excali--rendered-key key)
+      (unless (eq damage 'none)
+        (let* ((plan (excali--plan-repaint damage))
+               (drawn (if (eq plan 'none)
+                          0
+                        (excali-native-fb-render
+                         excali--fb excali--pixel-scale excali--zoom
+                         excali--scroll-x excali--scroll-y
+                         items plan
+                         (excali--canvas-color) (eq excali--theme 'dark)))))
+          (excali--present-frame t0 drawn nil))))))
 
 (defun excali--present-frame (start drawn preview)
   "Present the framebuffer and record stats for a frame begun at START.
@@ -474,7 +560,7 @@ views.  This runs from `excali--preview-timer'."
       (excali--with-view (if (window-live-p window) window excali--view-window)
         ;; `excali--render' cancels the timer too.
         (if excali--preview-origin
-            (excali--render)
+            (excali--render 'full)
           (excali--cancel-preview))))))
 
 (defun excali--snapshot-framebuffer ()
@@ -507,7 +593,7 @@ A full render follows once no step came for `excali-zoom-preview-delay'."
          (factor (and excali-zoom-preview-delay excali--fb
                       (excali--preview-factor base))))
     (if (not factor)
-        (excali--render)
+        (excali--render 'full)
       (let ((t0 (float-time))
             (new (excali--view-origin)))
         (unless excali--preview-origin
@@ -519,8 +605,9 @@ A full render follows once no step came for `excali-zoom-preview-delay'."
          excali--fb excali--preview-snapshot factor
          (- (nth 2 new) (* factor (nth 2 base)))
          (- (nth 3 new) (* factor (nth 3 base))))
-        ;; The pixels match no exact origin now: never scroll-reuse them.
-        (setq excali--rendered-origin nil)
+        ;; The pixels match no exact origin now: never scroll-reuse them,
+        ;; nor repaint only what changed since the last exact render.
+        (setq excali--rendered-origin nil excali--rendered-key nil)
         (excali--present-frame t0 0 t)
         (when excali--preview-timer
           (cancel-timer excali--preview-timer))
@@ -677,7 +764,8 @@ WINDOW defaults to the window of the current view, else the selected one."
             (excali--sync-layer window width height)
           (excali--hide-layer))
         (excali--sync-cursor-view window width height)
-        (excali--render)
+        ;; New surfaces hold nothing yet.
+        (excali--render 'full)
         (setq excali--view-stamp (excali--scene-stamp))
         (excali--update-pointer t)))))
 

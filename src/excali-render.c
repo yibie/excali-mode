@@ -342,6 +342,12 @@ static void element_bounds(const ExcaliElement *e, double *x1, double *y1,
 	*x1 = left - pad, *y1 = top - pad, *x2 = right + pad, *y2 = bottom + pad;
 }
 
+void excali_element_bounds(const ExcaliElement *e, double *x1, double *y1,
+                          double *x2, double *y2)
+{
+	element_bounds(e, x1, y1, x2, y2);
+}
+
 size_t excali_render(uint32_t *pixels, const ExcaliView *view,
                     const ExcaliElement *elements, size_t count)
 {

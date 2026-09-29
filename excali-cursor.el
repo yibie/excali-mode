@@ -75,6 +75,17 @@ shapes Emacs offers."
   "Images carrying the pointer map, as (SPEC X . Y).
 X and Y are the image's offset in the window, in logical pixels.")
 (defvar-local excali--pointer-stamp nil "What the pointer map was built for.")
+(defvar-local excali--pointer-focus nil
+  "Window rectangle (X1 Y1 X2 Y2) whose elements have hot spots, or nil.
+Element hot spots are built only around the mouse, so that a scene of
+thousands of elements costs no more than the few near it; nil builds
+them for the whole view.")
+
+(defconst excali--pointer-focus-radius 160
+  "Half the size, in window pixels, of the square element hot spots cover.")
+
+(defconst excali--pointer-refocus-margin 60
+  "Window pixels from the focus edge where the mouse gets a new focus.")
 (defvar-local excali--pointer-timer nil "Idle timer that will rebuild the pointer map.")
 
 (defcustom excali-pointer-map-delay 0.1
@@ -276,6 +287,33 @@ outline or path."
         (and (< (- x1 m) (nth 2 view)) (> (+ x2 m) (nth 0 view))
              (< (- y1 m) (nth 3 view)) (> (+ y2 m) (nth 1 view))))))
 
+(declare-function excali--hit-candidates "excali-hit")
+
+(defun excali--focus-elements ()
+  "Return the live elements element hot spots are built for, in z-order.
+Those near `excali--pointer-focus', else those roughly in view."
+  (if-let* ((focus excali--pointer-focus))
+      (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) focus)
+                   (center (cons (- (/ (+ x1 x2) 2.0 excali--zoom) excali--scroll-x)
+                                 (- (/ (+ y1 y2) 2.0 excali--zoom) excali--scroll-y))))
+        (excali--hit-candidates center (/ (/ (max (- x2 x1) (- y2 y1)) 2.0) excali--zoom)))
+    (let ((view (excali--visible-box)))
+      (seq-filter (lambda (e) (excali--roughly-visible-p e view)) (excali--live-elements)))))
+
+(defun excali--focus-around (xy)
+  "Return the focus rectangle centered on window point XY."
+  (let ((r excali--pointer-focus-radius))
+    (list (- (car xy) r) (- (cdr xy) r) (+ (car xy) r) (+ (cdr xy) r))))
+
+(defun excali--pointer-refocus (xy)
+  "Rebuild the pointer map around window point XY if it nears the focus edge."
+  (when-let* ((focus excali--pointer-focus))
+    (let ((m excali--pointer-refocus-margin))
+      (unless (and (< (+ (nth 0 focus) m) (car xy) (- (nth 2 focus) m))
+                   (< (+ (nth 1 focus) m) (cdr xy) (- (nth 3 focus) m)))
+        (setq excali--pointer-focus (excali--focus-around xy))
+        (excali--update-pointer t)))))
+
 (defun excali--handle-hot-spots ()
   "Return hot spots for the transform handles.
 They come in the order `excali--handle-at' checks."
@@ -316,10 +354,8 @@ They come in the order `excali--handle-at' checks."
 They come in the order `excali--select-cursor-at' checks."
   (let* ((single (excali--single-selection))
          (linear (excali--linear-target))
-         (view (excali--visible-box))
-         (elements (seq-filter (lambda (e) (and (not (excali--get e 'locked))
-                                                (excali--roughly-visible-p e view)))
-                               (reverse (excali--live-elements)))))
+         (elements (seq-remove (lambda (e) (excali--get e 'locked))
+                               (reverse (excali--focus-elements)))))
     (append
      ;; Link icons of unselected elements.
      (let ((tolerance (/ 4.0 excali--zoom)))
@@ -372,7 +408,7 @@ The last entry covers everything with the current tool's shape."
       (pcase excali--tool
         ('select (append (excali--select-hot-spots) (funcall default 'default)))
         ('text
-         (append (cl-loop for e in (reverse (excali--live-elements))
+         (append (cl-loop for e in (reverse (excali--focus-elements))
                           when (equal (excali--get e 'type) "text")
                           append (mapcar (lambda (area) (excali--hot-spot area 'text))
                                          (excali--element-hot-areas e)))
@@ -426,7 +462,16 @@ spec, so Emacs picks it up at the next mouse motion without a redisplay."
     (let ((stamp (excali--pointer-stamp)))
       (when (or force (not (equal stamp excali--pointer-stamp)))
         (setq excali--pointer-stamp stamp)
-        (let ((map (excali--pointer-map)))
+        (let ((map (progn
+                     ;; Center element hot spots on the mouse, else the view.
+                     (setq excali--pointer-focus
+                           (excali--focus-around
+                            (or (excali--mouse-window-xy)
+                                (and excali--canvas-size
+                                     (cons (round (/ (car excali--canvas-size) excali--pixel-scale 2))
+                                           (round (/ (cdr excali--canvas-size) excali--pixel-scale 2))))
+                                '(0 . 0))))
+                     (excali--pointer-map))))
           (dolist (surface excali--pointer-surfaces)
             (pcase-let ((`(,spec ,x . ,y) surface))
               (plist-put (cdr spec) :map

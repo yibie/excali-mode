@@ -323,16 +323,33 @@ follow the standard ones."
   (and id (cl-find id excali--elements
                    :key (lambda (e) (excali--get e 'id)) :test #'equal)))
 
+(defvar excali--points-bounds (make-hash-table :test #'eq :weakness 'key)
+  "Linear elements' bounds, as (POINTS VERSION X Y . BOUNDS).
+They stay valid while the points vector, the version and the origin do;
+points are always replaced, never changed in place, when they move.")
+
 (defun excali--bounds (element)
   "Return (X1 Y1 X2 Y2) of ELEMENT, ignoring rotation."
   (let ((x (excali--get element 'x)) (y (excali--get element 'y))
         (w (excali--get element 'width)) (h (excali--get element 'height)))
     (if-let* ((points (excali--get element 'points))
               ((> (length points) 0)))
-        (let ((xs (mapcar (lambda (p) (+ x (aref p 0))) points))
-              (ys (mapcar (lambda (p) (+ y (aref p 1))) points)))
-          (list (apply #'min xs) (apply #'min ys)
-                (apply #'max xs) (apply #'max ys)))
+        (let ((version (excali--get element 'version))
+              (cached (gethash element excali--points-bounds)))
+          (if (and cached (eq (nth 0 cached) points) (eql (nth 1 cached) version)
+                   (eql (nth 2 cached) x) (eql (nth 3 cached) y))
+              (copy-sequence (nthcdr 4 cached))
+            ;; One pass without consing: scenes hold thousands of lines.
+            (let* ((p0 (aref points 0))
+                   (x1 (aref p0 0)) (y1 (aref p0 1)) (x2 x1) (y2 y1))
+              (dotimes (i (length points))
+                (let* ((p (aref points i)) (px (aref p 0)) (py (aref p 1)))
+                  (cond ((< px x1) (setq x1 px)) ((> px x2) (setq x2 px)))
+                  (cond ((< py y1) (setq y1 py)) ((> py y2) (setq y2 py)))))
+              (let ((bounds (list (+ x x1) (+ y y1) (+ x x2) (+ y y2))))
+                (puthash element (append (list points version x y) bounds)
+                         excali--points-bounds)
+                bounds))))
       (list (min x (+ x w)) (min y (+ y h)) (max x (+ x w)) (max y (+ y h))))))
 
 (defun excali--normalize-box (element)

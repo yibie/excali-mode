@@ -191,6 +191,8 @@ static ExcaliType parse_type(const char *name)
 
 static void free_element(ExcaliElement *e)
 {
+	if (e->borrowed)
+		return;
 	free(e->stroke_color);
 	free(e->background_color);
 	free(e->fill_style);
@@ -284,7 +286,25 @@ static bool read_element(emacs_env *env, emacs_value vec, ExcaliElement *e)
 	return env->non_local_exit_check(env) == emacs_funcall_exit_return;
 }
 
-/* Read the element vector VEC into a malloc'ed array; set *COUNT.  */
+/* Compiled elements: read once, kept for every later render.  */
+static void compiled_free(void *ptr)
+{
+	ExcaliElement *e = ptr;
+	free_element(e);
+	excali_media_free(&e->media);
+	free(e);
+}
+
+static ExcaliElement *get_compiled(emacs_env *env, emacs_value value)
+{
+	if (!type_is(env, value, Quser_ptr) ||
+	    env->get_user_finalizer(env, value) != compiled_free)
+		return NULL;
+	return env->get_user_ptr(env, value);
+}
+
+/* Read the element vector VEC into a malloc'ed array; set *COUNT.
+   Compiled elements are copied, borrowing their strings and arrays.  */
 static ExcaliElement *read_elements(emacs_env *env, emacs_value vec,
                                    size_t *count)
 {
@@ -292,8 +312,14 @@ static ExcaliElement *read_elements(emacs_env *env, emacs_value vec,
 	ExcaliElement *elements = calloc(n ? n : 1, sizeof *elements);
 	size_t used = 0;
 	for (ptrdiff_t i = 0; i < n && elements; ++i) {
-		if (read_element(env, env->vec_get(env, vec, i),
-		                 &elements[used]))
+		emacs_value item = env->vec_get(env, vec, i);
+		ExcaliElement *compiled = get_compiled(env, item);
+		if (compiled) {
+			elements[used] = *compiled;
+			elements[used++].borrowed = true;
+			continue;
+		}
+		if (read_element(env, item, &elements[used]))
 			++used;
 		else
 			free_element(&elements[used]);
@@ -309,6 +335,110 @@ static void free_elements(ExcaliElement *elements, size_t count)
 	for (size_t i = 0; i < count; ++i)
 		free_element(&elements[i]);
 	free(elements);
+}
+
+/* (excali-native-element-compile NATIVE)
+   Return NATIVE, an element vector, read once for later renders.  */
+static emacs_value Fexcali_native_element_compile(emacs_env *env,
+                                                 ptrdiff_t nargs,
+                                                 emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	ExcaliElement *e = malloc(sizeof *e);
+	if (!e)
+		return Qnil;
+	if (!read_element(env, args[0], e)) {
+		free_element(e);
+		excali_media_free(&e->media);
+		free(e);
+		return Qnil;
+	}
+	return env->make_user_ptr(env, compiled_free, e);
+}
+
+/* (excali-native-hit-candidates ELEMENTS X Y TOLERANCE)
+   Return the ascending indices of ELEMENTS whose drawn box, grown by
+   TOLERANCE, holds the scene point X, Y.  */
+static emacs_value Fexcali_native_hit_candidates(emacs_env *env,
+                                                ptrdiff_t nargs,
+                                                emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	double x = get_number(env, args[1], 0), y = get_number(env, args[2], 0);
+	double tol = get_number(env, args[3], 0);
+	emacs_value cons = env->intern(env, "cons");
+	emacs_value result = Qnil;
+	for (ptrdiff_t i = env->vec_size(env, args[0]) - 1; i >= 0; --i) {
+		emacs_value item = env->vec_get(env, args[0], i);
+		ExcaliElement scratch, *e = get_compiled(env, item);
+		if (!e) {
+			if (!read_element(env, item, &scratch)) {
+				free_element(&scratch);
+				continue;
+			}
+			e = &scratch;
+		}
+		double x1, y1, x2, y2;
+		excali_element_bounds(e, &x1, &y1, &x2, &y2);
+		if (e == &scratch) {
+			free_element(&scratch);
+			excali_media_free(&scratch.media);
+		}
+		if (x >= x1 - tol && x <= x2 + tol && y >= y1 - tol &&
+		    y <= y2 + tol) {
+			emacs_value pair[2] = {env->make_integer(env, i), result};
+			result = env->funcall(env, cons, 2, pair);
+		}
+	}
+	return result;
+}
+
+/* (excali-native-element-boxes ITEMS)
+   Return a vector of [X1 Y1 X2 Y2 FRAME] for the list ITEMS, compiled
+   elements or element vectors: the scene box each may draw into, and
+   whether it is a frame, whose name and clip reach beyond that box.  */
+static emacs_value Fexcali_native_element_boxes(emacs_env *env,
+                                               ptrdiff_t nargs,
+                                               emacs_value *args, void *data)
+{
+	(void)nargs;
+	(void)data;
+	emacs_value length = env->intern(env, "length");
+	emacs_value nth = env->intern(env, "nth");
+	ptrdiff_t n = env->extract_integer(
+	        env, env->funcall(env, length, 1, &args[0]));
+	emacs_value vector_fn = env->intern(env, "make-vector");
+	emacs_value mv[2] = {env->make_integer(env, n), Qnil};
+	emacs_value result = env->funcall(env, vector_fn, 2, mv);
+	for (ptrdiff_t i = 0; i < n; ++i) {
+		emacs_value nargs2[2] = {env->make_integer(env, i), args[0]};
+		emacs_value item = env->funcall(env, nth, 2, nargs2);
+		ExcaliElement scratch, *e = get_compiled(env, item);
+		if (!e) {
+			if (!read_element(env, item, &scratch)) {
+				free_element(&scratch);
+				continue;
+			}
+			e = &scratch;
+		}
+		double x1, y1, x2, y2;
+		excali_element_bounds(e, &x1, &y1, &x2, &y2);
+		bool frame = e->type == EXCALI_FRAME;
+		if (e == &scratch) {
+			free_element(&scratch);
+			excali_media_free(&scratch.media);
+		}
+		emacs_value box[5] = {env->make_float(env, x1),
+		                      env->make_float(env, y1),
+		                      env->make_float(env, x2),
+		                      env->make_float(env, y2),
+		                      frame ? Qt : Qnil};
+		env->vec_set(env, result, i,
+		             env->funcall(env, env->intern(env, "vector"), 5, box));
+	}
+	return result;
 }
 
 /* Render the element vector ARGS[ELEMENTS] into PIXELS with VIEW.  */
@@ -1440,6 +1570,13 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excali-native-fb-create", Fexcali_native_fb_create, 2,
 	     "Return a WIDTH by HEIGHT offscreen framebuffer.\n\n"
 	     "(fn WIDTH HEIGHT)");
+	bind(env, "excali-native-element-compile", Fexcali_native_element_compile, 1,
+	     "Return the element vector NATIVE read once, for faster renders.\n\n"
+	     "Renders take the result in place of NATIVE; nil if it is invalid.");
+	bind(env, "excali-native-element-boxes", Fexcali_native_element_boxes, 1,
+	     "Return [X1 Y1 X2 Y2 FRAME] for each element of the list ITEMS.");
+	bind(env, "excali-native-hit-candidates", Fexcali_native_hit_candidates, 4,
+	     "Return indices of ELEMENTS whose box grown by TOLERANCE holds X, Y.");
 	bind_range(env, "excali-native-fb-render", Fexcali_native_fb_render, 7, 9,
 	     "Render ELEMENTS into FB, repainting only DAMAGE if non-nil.\n\n"
 	     "BACKGROUND, a \"#rrggbb\" string, is the canvas color (white);\n"

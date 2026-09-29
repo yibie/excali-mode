@@ -94,6 +94,9 @@ typedef struct {
 	bool constant_width;     /* strokeOptions.variability == "constant".  */
 	double streamline;       /* strokeOptions.streamline, default 0.5.  */
 	ExcaliMedia media; /* Image and frame data, see excali-image.h.  */
+	/* A copy of a compiled element (excali-native-element-compile),
+	   whose strings and arrays that element owns.  */
+	bool borrowed;
 } ExcaliElement;
 
 #define EXCALI_MAX_CLIPS 8
@@ -126,6 +129,9 @@ void excali_dark_filter(double rgb[3]);
    elements actually drawn after culling.  */
 size_t excali_render(uint32_t *pixels, const ExcaliView *view,
                     const ExcaliElement *elements, size_t count);
+/* The scene box ELEMENT may draw into, rotation and stroke included.  */
+void excali_element_bounds(const ExcaliElement *e, double *x1, double *y1,
+                          double *x2, double *y2);
 
 /* Draw scene element E with CR in scene coordinates (the element pass of
    `excali_render', without culling or frame clipping).  */

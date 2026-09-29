@@ -43,9 +43,14 @@ excali-mode is not on MELPA yet.  Build it from a clone:
 #+begin_src shell
 git clone https://github.com/yibie/excali-mode.git
 cd excali-mode
-make            # the C module; see Platforms below for the libraries
+make            # the C module and the byte-compiled Lisp; see Platforms
 make fonts      # optional but recommended: Excalidraw's fonts (network)
 #+end_src
+
+Run =make= again after pulling: excali loaded from uncompiled =.el= files
+runs several times slower, which large scenes feel.  Emacs picks the
+=.elc= files up by itself, and native-compiles them in the background
+where it can.
 
 #+begin_src emacs-lisp
 (use-package excali
@@ -60,6 +65,7 @@ an embedded scene); =M-x excali-new= starts an empty drawing.
 
 #+begin_src shell
 make            # builds excali-module (.so/.dylib/.dll per Emacs; needs cairo, pangocairo, zlib)
+make compile    # byte-compiles the Lisp (part of make)
 make info       # shows the detected platform, Emacs, header and module name
 make test       # batch ERT: round-trip, text, rendering, tiles, resizing
 make try        # opens the sample in a clean GUI Emacs

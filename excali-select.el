@@ -74,18 +74,21 @@ edited, the group just inside it."
 
 ;;;; Pointer position
 
-(defun excali--mouse-scene-xy ()
-  "Return the mouse position in scene units, or nil if it is not over the canvas."
+(defun excali--mouse-window-xy ()
+  "Return the mouse position in window pixels, or nil if it is not over the canvas."
   (let* ((window (and (display-graphic-p) (excali--view-window)))
          (pointer (and window (mouse-absolute-pixel-position)))
          (edges (and window (window-inside-absolute-pixel-edges window))))
     (when (and edges
                (<= (nth 0 edges) (car pointer) (1- (nth 2 edges)))
                (<= (nth 1 edges) (cdr pointer) (1- (nth 3 edges))))
-      (cons (- (/ (float (- (car pointer) (nth 0 edges))) excali--zoom)
-               excali--scroll-x)
-            (- (/ (float (- (cdr pointer) (nth 1 edges))) excali--zoom)
-               excali--scroll-y)))))
+      (cons (- (car pointer) (nth 0 edges)) (- (cdr pointer) (nth 1 edges))))))
+
+(defun excali--mouse-scene-xy ()
+  "Return the mouse position in scene units, or nil if it is not over the canvas."
+  (when-let* ((xy (excali--mouse-window-xy)))
+    (cons (- (/ (float (car xy)) excali--zoom) excali--scroll-x)
+          (- (/ (float (cdr xy)) excali--zoom) excali--scroll-y))))
 
 (defun excali--view-center ()
   "Return the scene point at the center of the canvas."

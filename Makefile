@@ -104,9 +104,20 @@ endif
 # A no-op where the glob matches nothing.
 EMACS_Q_FIX = --eval "(let ((lib (car (file-expand-wildcards \"/opt/homebrew/opt/gcc/lib/gcc/current/gcc/*/*/libemutls_w.a\")))) (when lib (setq native-comp-driver-options (list (concat \"-L\" (file-name-directory lib))))))"
 
-.PHONY: all module test bench try info clean fonts hero
+.PHONY: all module compile test bench try info clean fonts hero
 
-all: module
+LISP := $(wildcard excali*.el)
+
+all: module compile
+
+# Byte-compile the Lisp (Emacs then native-compiles it in the background
+# where it can).  Loaded from source, excali runs several times slower.
+# Everything is recompiled when any file changes, since files share macros.
+compile: build/elc.stamp
+
+build/elc.stamp: $(LISP) $(MODULE) | build
+	$(EMACS) --batch -Q -L . -f batch-byte-compile $(LISP)
+	@touch $@
 
 module: $(MODULE)
 
@@ -134,19 +145,19 @@ TESTS := $(wildcard test/*-test.el)
 
 # Test files may (require 'excali-test) for its helpers, so skip files
 # whose feature is already loaded instead of loading them twice.
-test: module
+test: compile
 	$(EMACS) --batch -Q -L . -L test -l ert \
 	  --eval '(dolist (f (list $(foreach t,$(TESTS),"$(t)"))) (unless (featurep (intern (file-name-base f))) (load (expand-file-name f) nil t)))' \
 	  -f ert-run-tests-batch-and-exit
 
 # Needs a graphical session: opens a frame, benchmarks, writes bench.txt.
-bench: module
+bench: compile
 	rm -f bench.txt
 	$(EMACS_GUI) -Q $(EMACS_Q_FIX) -L $(CURDIR) -l $(CURDIR)/test/excali-gui-bench.el
 	@cat bench.txt
 
 # The README animation, rendered in batch by excali itself (needs ffmpeg).
-hero: module
+hero: compile
 	rm -rf build/hero && mkdir -p build/hero
 	EXCALI_HERO_FRAMES=$(CURDIR)/build/hero $(EMACS) -Q --batch -L $(CURDIR) \
 	  -l $(CURDIR)/docs/media/hero.el -f hero-render
@@ -162,7 +173,7 @@ fonts:
 	$(EMACS) --batch -Q -l fonts/excali-fetch-fonts.el
 
 # Open the sample scene in a clean GUI Emacs for manual testing.
-try: module
+try: compile
 	$(EMACS_GUI) -Q $(EMACS_Q_FIX) -L $(CURDIR) --eval "(progn (require 'excali) (excali-open \"$(CURDIR)/test/sample.excalidraw\"))"
 
 clean:

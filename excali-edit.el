@@ -62,6 +62,7 @@ The box is the selection bounds padded like `draw_selection'."
           (excali--multi-move xy))
         (when-let* ((damage (excali--elbow-track-hover xy)))
           (excali--render damage))
+        (excali--pointer-refocus (posn-x-y posn))
         ;; The pointer map switches shapes itself; only the module's
         ;; view needs telling (`excali-native-cursors').
         (when excali--cursor-view-shown

@@ -168,6 +168,28 @@ With CLOSED, the last point joins the first."
   (when-let* ((id (and (excali--bound-text-p element) (excali--get element 'containerId))))
     (cl-find-if (lambda (e) (equal (excali--get e 'id) id)) (excali--live-elements))))
 
+(declare-function excali-native-hit-candidates "excali-module")
+(declare-function excali--compiled "excali-view")
+(declare-function excali--native-element "excali-view")
+
+(defun excali--hit-candidates (scene-xy &optional radius)
+  "Return the live elements that may be hit at SCENE-XY, in z-order.
+The module compares every element's drawn box with the point at once,
+so the exact tests only see the few elements near it.  With RADIUS,
+return those whose box comes within RADIUS of SCENE-XY instead."
+  (let ((live (excali--live-elements)))
+    (if (not (fboundp 'excali-native-hit-candidates))
+        live
+      (let* ((vec (vconcat live))
+             (indices (excali-native-hit-candidates
+                       (vconcat (mapcar (lambda (e) (excali--compiled (excali--native-element e)))
+                                        live))
+                       (car scene-xy) (cdr scene-xy)
+                       (or radius
+                           ;; More than any hit distance: see `excali--hit-element-p'.
+                           (+ 40.0 (/ 10.0 excali--zoom))))))
+        (mapcar (lambda (i) (aref vec i)) indices)))))
+
 (defun excali--hit (scene-xy)
   "Return the topmost element hit at SCENE-XY, or nil.
 Bound text counts as its container.  When several elements are hit, the
@@ -175,7 +197,7 @@ topmost one must also pass half the threshold, as upstream does, so a
 stroke right next to another element does not steal the press."
   (or (excali--hit-frame-name scene-xy)
    (let ((hits nil))
-    (dolist (e (reverse (excali--live-elements)))
+    (dolist (e (reverse (excali--hit-candidates scene-xy)))
       ;; Locked elements cannot be picked; a press on them selects by box.
       (when (and (not (excali--get e 'locked))
                  (excali--hit-element-p e scene-xy))

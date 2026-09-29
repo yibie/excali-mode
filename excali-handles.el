@@ -205,15 +205,34 @@ PROPS may give :angle, :stroke, :fill, :width (px) and :style."
            (+ (- x2 x1) (* 2 p)) (+ (- y2 y1) (* 2 p)) props)))
 
 (defun excali--selected-groups ()
-  "Return the groups selected as units, each as (GROUP . MEMBERS)."
-  (let (groups)
+  "Return the groups selected as units, each as (GROUP . MEMBERS).
+One pass over the scene finds the members of every group the selection
+touches, so a large selection of grouped elements stays cheap."
+  (let ((wanted (make-hash-table :test #'equal))
+        (selected (make-hash-table :test #'eq))
+        order)
     (dolist (e excali--selection)
+      (puthash e t selected)
       (when-let* ((group (excali--unit-group e))
-                  ((not (assoc group groups))))
-        (let ((members (excali--group-members group)))
-          (when (and (cdr members) (seq-every-p #'excali--selected-p members))
-            (push (cons group members) groups)))))
-    (nreverse groups)))
+                  ((not (gethash group wanted))))
+        (puthash group t wanted)
+        (push group order)))
+    (when order
+      (let ((members (make-hash-table :test #'equal)))
+        ;; `mapc' and `cl-every', not their generic `seq' kin: this
+        ;; runs over the whole scene every frame.
+        (dolist (e excali--elements)
+          (unless (excali--get e 'isDeleted)
+            (when-let* ((ids (excali--get e 'groupIds)))
+              (mapc (lambda (group)
+                      (when (and (gethash group wanted)
+                                 (not (eq (car (gethash group members)) e)))
+                        (push e (gethash group members))))
+                    ids))))
+        (cl-loop for group in (nreverse order)
+                 for ms = (reverse (gethash group members))
+                 when (and (cdr ms) (cl-every (lambda (m) (gethash m selected)) ms))
+                 collect (cons group ms))))))
 
 (defun excali--handle-overlays (target)
   "Return handle overlays for TARGET, see `excali--transform-target'."
@@ -240,7 +259,8 @@ Tool overlays (laser, lasso, eye dropper) go on top."
 (defun excali--editor-overlay-natives ()
   "Return overlay pseudo-elements for the selection UI and the marquee."
   (let* ((groups (excali--selected-groups))
-         (grouped (apply #'append (mapcar #'cdr groups)))
+         (grouped (let ((set (make-hash-table :test #'eq)))
+                    (dolist (g groups set) (dolist (m (cdr g)) (puthash m t set)))))
          (single (excali--single-selection))
          (overlays nil))
     (if (or excali--editing-linear (and single (excali--two-point-linear-p single)))
@@ -249,7 +269,7 @@ Tool overlays (laser, lasso, eye dropper) go on top."
       ;; Borders of elements not selected through a group; a lone bound
       ;; elbow arrow has none.
       (dolist (e excali--selection)
-        (unless (or (memq e grouped)
+        (unless (or (gethash e grouped)
                     (and single (excali--get e 'elbowed)
                          (or (excali--get e 'startBinding) (excali--get e 'endBinding))))
           (push (excali--ov-box (excali--element-box e) (* 2 excali--handle-spacing)
