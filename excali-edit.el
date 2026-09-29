@@ -55,7 +55,7 @@ The box is the selection bounds padded like `draw_selection'."
   "Follow mouse movement EVENT: hover effects and multi-point lines."
   (interactive "e")
   (let ((posn (event-start event)))
-    (when (and (eq (posn-window posn) (get-buffer-window (current-buffer)))
+    (when (and (eq (posn-window posn) (excali--view-window))
                (excali--canvas-area-p posn))
       (let ((xy (excali--event-scene-xy event)))
         (when excali--multi-element

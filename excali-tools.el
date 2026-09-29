@@ -162,12 +162,14 @@ Points are offset by their radius on both sides, with round caps."
                           (< (- now (aref (car trail) 2)) excali--laser-decay-time)))
                     excali--laser-trails)))
 
-(defun excali--laser-tick (buffer)
-  "Advance the laser decay in BUFFER; stop the timer once all trails faded."
+(defun excali--laser-tick (buffer &optional window)
+  "Advance the laser decay in BUFFER; stop the timer once all trails faded.
+The trails show in WINDOW's view, where they were drawn, if given."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (excali--laser-prune (float-time))
-      (excali--render (or (excali--laser-refresh-damage) 'full))
+      (excali--with-view (if (window-live-p window) window excali--view-window)
+        (excali--laser-prune (float-time))
+        (excali--render (or (excali--laser-refresh-damage) 'full)))
       (unless excali--laser-trails
         (when excali--laser-timer (cancel-timer excali--laser-timer))
         (setq excali--laser-timer nil)))))
@@ -178,7 +180,8 @@ Points are offset by their radius on both sides, with round caps."
   (push excali--laser-live excali--laser-trails)
   (unless excali--laser-timer
     (setq excali--laser-timer
-          (run-with-timer 0 (/ 1.0 30) #'excali--laser-tick (current-buffer))))
+          (run-with-timer 0 (/ 1.0 30) #'excali--laser-tick (current-buffer)
+                          excali--view-window)))
   (unwind-protect
       (excali--drag-loop
        (lambda (ev)

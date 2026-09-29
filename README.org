@@ -176,6 +176,10 @@ crisp full render follows once no zoom step came for
 more than =excali-zoom-preview-limit= (4x) away from that render render
 fully.
 
+A scene shown in several windows gets a view per window, each with its
+own zoom, scroll, framebuffer and surfaces; a change made in one window
+redraws the others after the command.
+
 =M-x excali-bench-backends= in an excali buffer compares them; =make bench=
 does the same in a fresh GUI Emacs and writes =bench.txt=.
 

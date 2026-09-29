@@ -175,6 +175,177 @@ FRAME defaults to the selected frame.  Resolve `auto' in
 (defvar-local excali--layer nil "Overlay layer handle for `layer'.")
 (defvar-local excali--last-stats nil "Plist describing the last frame.")
 
+;;;; Views
+;;
+;; A buffer shown in several windows gives each its own view: zoom,
+;; scroll, framebuffer, display surfaces, layer and pointer map.  The
+;; view variables below always hold the view of `excali--view-window';
+;; the others wait in `excali--views'.  `excali--with-view' swaps a
+;; window's view in for the duration of its body.
+;;
+;; The buffer holds one placeholder character.  Each window hides it and
+;; shows its own surfaces through an overlay of its own: `display' ""
+;; replaces the character and `before-string' carries the images (a
+;; display string cannot hold images of its own, an overlay string can).
+
+(defvar-local excali--view-overlay nil "The window's overlay showing its surfaces.")
+(defvar-local excali--view-stamp nil
+  "`excali--scene-stamp' of the scene the view last rendered.")
+
+(defconst excali--view-variables
+  '(excali--zoom excali--scroll-x excali--scroll-y excali--pixel-scale
+    excali--canvas excali--canvas-size excali--fb excali--tiles excali--layer
+    excali--rendered-origin excali--pan-remainder excali--last-render-time
+    excali--last-stats excali--preview-snapshot excali--preview-origin
+    excali--preview-timer excali--pointer-surfaces excali--pointer-stamp
+    excali--cursor excali--cursor-view excali--cursor-view-shown
+    excali--view-overlay excali--view-stamp)
+  "Buffer-local variables that belong to one window's view.")
+
+(defvar-local excali--view-window nil
+  "The window whose view the view variables hold, or nil before the first.")
+(defvar-local excali--views nil
+  "Hash table from windows to the saved views of the other windows.
+A saved view is an alist of `excali--view-variables' and their values.")
+
+(defun excali--view-values ()
+  "Return the view variables' values as an alist."
+  (mapcar (lambda (var) (cons var (symbol-value var))) excali--view-variables))
+
+(defun excali--new-view (window)
+  "Return a view for WINDOW that looks where the current one does."
+  (append (list (cons 'excali--zoom excali--zoom)
+                (cons 'excali--scroll-x excali--scroll-x)
+                (cons 'excali--scroll-y excali--scroll-y)
+                (cons 'excali--pixel-scale (excali--guess-pixel-scale (window-frame window)))
+                (cons 'excali--pan-remainder (cons 0.0 0.0)))
+          (mapcar (lambda (var) (cons var nil))
+                  (seq-difference excali--view-variables
+                                  '(excali--zoom excali--scroll-x excali--scroll-y
+                                    excali--pixel-scale excali--pan-remainder)))))
+
+(defun excali--use-view (window)
+  "Make WINDOW's view the one the view variables hold.
+The first window adopts the buffer's state as its view; a window
+without a view yet gets one showing what the current view shows."
+  (unless (or (eq window excali--view-window) (null window))
+    (unless excali--views
+      (setq excali--views (make-hash-table :test #'eq)))
+    (when excali--view-window
+      (let ((saved (gethash window excali--views)))
+        (puthash excali--view-window (excali--view-values) excali--views)
+        (remhash window excali--views)
+        (dolist (cell (or saved (excali--new-view window)))
+          (set (car cell) (cdr cell)))))
+    (setq excali--view-window window)))
+
+(defmacro excali--with-view (window &rest body)
+  "Run BODY with WINDOW's view in the view variables, then swap back."
+  (declare (indent 1))
+  (let ((old (make-symbol "old")))
+    `(let ((,old excali--view-window))
+       (excali--use-view ,window)
+       (unwind-protect (progn ,@body)
+         (when (window-live-p ,old)
+           (excali--use-view ,old))))))
+
+(defun excali--view-window ()
+  "Return the window of the current view, else one showing the buffer."
+  (if (window-live-p excali--view-window)
+      excali--view-window
+    (get-buffer-window (current-buffer))))
+
+(defun excali--view-value (window var)
+  "Return the value of view variable VAR in WINDOW's view."
+  (let ((saved (and excali--views (not (eq window excali--view-window))
+                    (gethash window excali--views))))
+    (if saved (alist-get var saved) (symbol-value var))))
+
+(defun excali--view-windows ()
+  "Return the live windows showing this buffer, on any frame."
+  (get-buffer-window-list (current-buffer) 'nomini t))
+
+(defun excali--other-views ()
+  "Return the windows other than `excali--view-window' that have a view."
+  (and excali--views
+       (let (windows)
+         (maphash (lambda (window _) (push window windows)) excali--views)
+         windows)))
+
+(defun excali--release-view (window)
+  "Forget WINDOW's view: hide its layer and cursor view, drop its overlay."
+  (excali--with-view window
+    (excali--cancel-preview)
+    (excali--hide-layer)
+    (when (fboundp 'excali--hide-cursor-view) (excali--hide-cursor-view))
+    (when (overlayp excali--view-overlay) (delete-overlay excali--view-overlay))
+    (setq excali--view-overlay nil excali--canvas-size nil excali--fb nil
+          excali--canvas nil excali--tiles nil excali--pointer-surfaces nil))
+  (if (eq window excali--view-window)
+      ;; The current view goes: take any other one.
+      (let ((next (car (excali--other-views))))
+        (if next
+            (progn (excali--use-view next) (remhash window excali--views))
+          (setq excali--view-window nil)))
+    (remhash window excali--views)))
+
+(defun excali--release-views ()
+  "Release every view of this buffer, as it is killed."
+  (dolist (window (cons excali--view-window (excali--other-views)))
+    (when window (excali--release-view window))))
+
+(defun excali--prune-views ()
+  "Release the views of windows that no longer show this buffer."
+  (let ((showing (excali--view-windows)))
+    (dolist (window (cons excali--view-window (excali--other-views)))
+      (when (and window (not (memq window showing)))
+        (excali--release-view window)))))
+
+(defun excali--scene-stamp ()
+  "Return what every view of the scene depends on."
+  (let ((h 0))
+    (dolist (e excali--elements)
+      (setq h (logand (+ (* h 31) (or (excali--get e 'versionNonce) 0))
+                      most-positive-fixnum)))
+    (list h (length excali--elements)
+          (mapcar (lambda (e) (excali--get e 'id)) excali--selection)
+          (and excali--editing-linear (excali--get excali--editing-linear 'id))
+          excali--editing-group excali--theme (bound-and-true-p excali--grid-enabled)
+          (excali--canvas-color))))
+
+(defun excali--command-window ()
+  "Return the window the current command acts in, if it shows this buffer.
+Mouse events act where they happen, other input in the selected window."
+  (let* ((event last-input-event)
+         (window (if (and (consp event) (consp (cdr event)) (consp (cadr event))
+                          (windowp (posn-window (event-start event))))
+                     (posn-window (event-start event))
+                   (selected-window))))
+    (and (window-live-p window) (eq (window-buffer window) (current-buffer))
+         window)))
+
+(defun excali--select-view ()
+  "Before a command, give it the view of the window it acts in.
+A press in another window showing the buffer selects that window, as
+clicks do in Emacs."
+  (when-let* ((window (excali--command-window)))
+    (when (and (not (eq window (selected-window)))
+               (memq 'down (event-modifiers last-input-event)))
+      (select-window window))
+    (excali--use-view window)))
+
+(defun excali--sync-views ()
+  "After a command, redraw the other windows' views if the scene changed."
+  (when (excali--other-views)
+    (let ((stamp (excali--scene-stamp)))
+      (setq excali--view-stamp stamp)
+      (dolist (window (excali--other-views))
+        (when (and (window-live-p window)
+                   (not (equal stamp (excali--view-value window 'excali--view-stamp))))
+          (excali--with-view window
+            (excali--render)
+            (setq excali--view-stamp stamp)))))))
+
 (defun excali--view-origin ()
   "Return (ZOOM PIXEL-SCALE X Y): the scene origin in device pixels."
   (let ((scale (* excali--zoom excali--pixel-scale)))
@@ -294,15 +465,17 @@ is nil then, so the next render repaints everything."
     (setq excali--preview-timer nil))
   (setq excali--preview-origin nil))
 
-(defun excali--finish-preview (buffer)
+(defun excali--finish-preview (buffer &optional window)
   "Replace the zoom preview in BUFFER with a full render.
-This runs from `excali--preview-timer'."
+WINDOW is the window whose view shows the preview, if the buffer has
+views.  This runs from `excali--preview-timer'."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      ;; `excali--render' cancels the timer too.
-      (if excali--preview-origin
-          (excali--render)
-        (excali--cancel-preview)))))
+      (excali--with-view (if (window-live-p window) window excali--view-window)
+        ;; `excali--render' cancels the timer too.
+        (if excali--preview-origin
+            (excali--render)
+          (excali--cancel-preview))))))
 
 (defun excali--snapshot-framebuffer ()
   "Copy the framebuffer into `excali--preview-snapshot'."
@@ -352,8 +525,9 @@ A full render follows once no step came for `excali-zoom-preview-delay'."
         (when excali--preview-timer
           (cancel-timer excali--preview-timer))
         (setq excali--preview-timer
-              (run-with-timer excali-zoom-preview-delay nil
-                              #'excali--finish-preview (current-buffer)))
+              (apply #'run-with-timer excali-zoom-preview-delay nil
+                     #'excali--finish-preview (current-buffer)
+                     (and excali--view-window (list excali--view-window))))
         (add-hook 'kill-buffer-hook #'excali--cancel-preview nil t)))))
 
 (defun excali--present ()
@@ -372,10 +546,10 @@ A full render follows once no step came for `excali-zoom-preview-delay'."
      (excali-native-layer-present excali--layer excali--fb)
      1)))
 
-(defun excali--guess-pixel-scale ()
-  "Return the device pixel ratio of the selected frame."
+(defun excali--guess-pixel-scale (&optional frame)
+  "Return the device pixel ratio of FRAME, by default the selected one."
   (or excali-pixel-scale
-      (let ((scale (and (fboundp 'frame-scale-factor) (frame-scale-factor))))
+      (let ((scale (and (fboundp 'frame-scale-factor) (frame-scale-factor frame))))
         (if (and (numberp scale) (> scale 0)) (float scale) 1.0))))
 
 (defun excali--make-canvas (width height)
@@ -398,21 +572,24 @@ Return a list of (OFFSET . LENGTH)."
         (cl-incf done len)))
     (nreverse parts)))
 
-(defun excali--insert-tiles (width height)
-  "Insert Canvas tiles covering WIDTH by HEIGHT logical pixels."
+(defun excali--make-tiles (width height)
+  "Make Canvas tiles covering WIDTH by HEIGHT logical pixels.
+Set `excali--tiles' and return the string showing them, rows of tiles
+separated by newlines."
   (let ((scale excali--pixel-scale)
         (rows (excali--split height excali-tile-size))
-        tiles)
+        tiles parts)
     (dolist (row rows)
       (dolist (col (excali--split width excali-tile-size))
         (let* ((x (round (* scale (car col)))) (w (round (* scale (cdr col))))
                (y (round (* scale (car row)))) (h (round (* scale (cdr row))))
                (canvas (excali--make-canvas w h)))
           (push (vector canvas x y w h) tiles)
-          (insert (propertize " " 'display canvas))))
+          (push (propertize " " 'display canvas) parts)))
       (unless (eq row (car (last rows)))
-        (insert "\n")))
-    (setq excali--tiles (vconcat (nreverse tiles)))))
+        (push "\n" parts)))
+    (setq excali--tiles (vconcat (nreverse tiles)))
+    (apply #'concat (nreverse parts))))
 
 (defun excali--sync-layer (window width height)
   "Attach and place the overlay layer over WINDOW's WIDTH by HEIGHT body."
@@ -432,61 +609,87 @@ Return a list of (OFFSET . LENGTH)."
   (when excali--layer
     (excali-native-layer-set-geometry excali--layer 0 0 1 1 1.0 nil)))
 
+(defun excali--ensure-placeholder ()
+  "Make the buffer hold just the placeholder character the views replace."
+  (unless (equal (buffer-substring-no-properties (point-min) (point-max)) " ")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert " ")
+      (goto-char (point-min)))))
+
+(defun excali--make-surfaces (width height)
+  "Make the view's display surfaces for WIDTH by HEIGHT logical pixels.
+Return the string that shows them in the window."
+  (pcase excali--backend
+    ('canvas
+     (setq excali--canvas (excali--make-canvas (car excali--canvas-size)
+                                              (cdr excali--canvas-size)))
+     (propertize " " 'display excali--canvas))
+    ('tiles (excali--make-tiles width height))
+    ('layer
+     ;; The layer shows the pixels; underneath, a 1x1 canvas stretched
+     ;; over the window takes mouse events and carries the pointer map.
+     (setq excali--canvas
+           (list 'image :map nil :type 'canvas :id (gensym "excali-pointer-")
+                 :data-width 1 :data-height 1 :width width :height height
+                 :scale 1 :ascent 'center))
+     (propertize " " 'display excali--canvas))))
+
 (defun excali--sync-canvas (&optional window)
-  "Size the display surfaces to WINDOW's body and render."
-  (let* ((window (or window (get-buffer-window (current-buffer))))
-         (width (max 1 (window-body-width window t)))
-         (height (max 1 (window-body-height window t)))
-         (dw (round (* width excali--pixel-scale)))
-         (dh (round (* height excali--pixel-scale))))
-    (unless (equal excali--canvas-size (cons dw dh))
-      (setq excali--canvas-size (cons dw dh)
-            excali--fb (excali-native-fb-create dw dh)
-            excali--rendered-origin nil
-            excali--canvas nil
-            excali--tiles nil)
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (pcase excali--backend
-          ('canvas
-           (setq excali--canvas (excali--make-canvas dw dh))
-           (insert (propertize " " 'display excali--canvas)))
-          ('tiles (excali--insert-tiles width height))
-          ('layer
-           ;; The layer shows the pixels; underneath, a 1x1 canvas stretched
-           ;; over the window takes mouse events and carries the pointer map.
-           (setq excali--canvas
-                 (list 'image :map nil :type 'canvas :id (gensym "excali-pointer-")
-                       :data-width 1 :data-height 1 :width width :height height
-                       :scale 1 :ascent 'center))
-           (insert (propertize " " 'display excali--canvas))))
-        (goto-char (point-min))
-        (setq excali--pointer-surfaces
-              (if (eq excali--backend 'tiles)
-                  (mapcar (lambda (tile)
-                            (cons (aref tile 0)
-                                  (cons (round (/ (aref tile 1) excali--pixel-scale))
-                                        (round (/ (aref tile 2) excali--pixel-scale)))))
-                          excali--tiles)
-                (list (cons excali--canvas (cons 0 0))))))
-      ;; Canvas pixel buffers exist only once the images are displayed.
-      (redisplay t))
-    (if (eq excali--backend 'layer)
-        (excali--sync-layer window width height)
-      (excali--hide-layer))
-    (excali--sync-cursor-view window width height)
-    (excali--render)
-    (excali--update-pointer t)))
+  "Size WINDOW's display surfaces to its body and render its view.
+WINDOW defaults to the window of the current view, else the selected one."
+  (interactive)
+  (let ((window (or window
+                    (and (window-live-p excali--view-window) excali--view-window)
+                    (get-buffer-window (current-buffer)))))
+    (excali--with-view window
+      (let* ((width (max 1 (window-body-width window t)))
+             (height (max 1 (window-body-height window t)))
+             (dw (round (* width excali--pixel-scale)))
+             (dh (round (* height excali--pixel-scale))))
+        (unless (and (equal excali--canvas-size (cons dw dh))
+                     (overlayp excali--view-overlay)
+                     (overlay-buffer excali--view-overlay))
+          (setq excali--canvas-size (cons dw dh)
+                excali--fb (excali-native-fb-create dw dh)
+                excali--rendered-origin nil
+                excali--canvas nil
+                excali--tiles nil)
+          (excali--ensure-placeholder)
+          (unless (and (overlayp excali--view-overlay) (overlay-buffer excali--view-overlay))
+            (setq excali--view-overlay (make-overlay (point-min) (point-max) nil nil t))
+            (overlay-put excali--view-overlay 'window window)
+            (overlay-put excali--view-overlay 'display ""))
+          (move-overlay excali--view-overlay (point-min) (point-max))
+          (overlay-put excali--view-overlay 'before-string
+                       (excali--make-surfaces width height))
+          (setq excali--pointer-surfaces
+                (if (eq excali--backend 'tiles)
+                    (mapcar (lambda (tile)
+                              (cons (aref tile 0)
+                                    (cons (round (/ (aref tile 1) excali--pixel-scale))
+                                          (round (/ (aref tile 2) excali--pixel-scale)))))
+                            excali--tiles)
+                  (list (cons excali--canvas (cons 0 0)))))
+          ;; Canvas pixel buffers exist only once the images are displayed.
+          (redisplay t))
+        (if (eq excali--backend 'layer)
+            (excali--sync-layer window width height)
+          (excali--hide-layer))
+        (excali--sync-cursor-view window width height)
+        (excali--render)
+        (setq excali--view-stamp (excali--scene-stamp))
+        (excali--update-pointer t)))))
 
 (defun excali--window-size-change (frame)
-  "Resize or hide the surfaces of excali buffers after FRAME changed."
+  "Resize the views of excali buffers shown on FRAME; drop gone ones."
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (derived-mode-p 'excali-mode)
-        (if-let* ((window (get-buffer-window buffer frame)))
-            (excali--sync-canvas window)
-          (excali--hide-layer)
-          (excali--hide-cursor-view))))))
+        (excali--prune-views)
+        (dolist (window (excali--view-windows))
+          (when (eq (window-frame window) frame)
+            (excali--sync-canvas window)))))))
 
 (defun excali-cycle-backend ()
   "Switch to the next presentation backend."
@@ -499,10 +702,13 @@ Return a list of (OFFSET . LENGTH)."
     (message "Backend: %s" next)))
 
 (defun excali--use-backend (backend)
-  "Switch this buffer to BACKEND and redraw."
-  (unless (eq backend 'layer) (excali--hide-layer))
-  (setq excali--backend backend excali--canvas-size nil)
-  (excali--sync-canvas))
+  "Switch this buffer to BACKEND and redraw every view."
+  (setq excali--backend backend)
+  (dolist (window (or (excali--view-windows) (list (selected-window))))
+    (excali--with-view window
+      (unless (eq backend 'layer) (excali--hide-layer))
+      (setq excali--canvas-size nil))
+    (excali--sync-canvas window)))
 
 (defun excali--device-rect (element)
   "Return ELEMENT's padded bounds as (X1 Y1 X2 Y2) in device pixels."
@@ -573,11 +779,11 @@ which `excali--plan-repaint' detects by itself."
   (memq (posn-area posn) '(nil excali-canvas)))
 
 (defun excali--event-window-xy (event)
-  "Return EVENT's position relative to the canvas window's text area.
+  "Return EVENT's position relative to the view's window's text area.
 Positions over the mode line or outside the window are not relative to
 the text area, so fall back to the absolute pointer position."
   (let* ((posn (event-end event))
-         (window (get-buffer-window (current-buffer))))
+         (window (excali--view-window)))
     (if (and (eq (posn-window posn) window) (excali--canvas-area-p posn))
         (posn-x-y posn)
       (let ((pointer (mouse-absolute-pixel-position))

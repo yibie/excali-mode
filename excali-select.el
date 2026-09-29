@@ -15,6 +15,8 @@
 
 (require 'excali-core)
 
+(declare-function excali--view-window "excali-view")
+
 ;;;; Queries
 
 (defun excali--live-elements ()
@@ -74,7 +76,7 @@ edited, the group just inside it."
 
 (defun excali--mouse-scene-xy ()
   "Return the mouse position in scene units, or nil if it is not over the canvas."
-  (let* ((window (and (display-graphic-p) (get-buffer-window (current-buffer))))
+  (let* ((window (and (display-graphic-p) (excali--view-window)))
          (pointer (and window (mouse-absolute-pixel-position)))
          (edges (and window (window-inside-absolute-pixel-edges window))))
     (when (and edges

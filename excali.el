@@ -224,14 +224,22 @@ or deselect."
               line-spacing nil
               mode-line-process '(:eval (format " %s %s %d%%" excali--backend
                                                 excali--tool
-                                                (round (* 100 excali--zoom)))))
+                                                ;; The window's own view.
+                                                (round (* 100 (excali--view-value
+                                                               (selected-window)
+                                                               'excali--zoom))))))
   (setq excali--native-cache (make-hash-table :test #'eq :weakness 'key)
         excali--pixel-scale (excali--guess-pixel-scale)
         excali--backend (excali--resolve-backend))
+  (add-hook 'kill-buffer-hook #'excali--release-views nil t)
   (add-hook 'kill-buffer-hook #'excali--hide-layer nil t)
   (add-hook 'kill-buffer-hook #'excali--hide-cursor-view nil t)
   (add-hook 'window-size-change-functions #'excali--window-size-change)
   (add-hook 'window-buffer-change-functions #'excali--window-size-change)
+  ;; Commands act in the view of the window they act in; afterwards the
+  ;; other windows showing the buffer catch up.
+  (add-hook 'pre-command-hook #'excali--select-view -90 t)
+  (add-hook 'post-command-hook #'excali--sync-views 90 t)
   ;; One undo step per command that changed the scene.
   (add-hook 'pre-command-hook #'excali--flowchart-pre-command nil t)
   (add-hook 'post-command-hook #'excali--commit nil t)
