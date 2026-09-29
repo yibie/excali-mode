@@ -209,11 +209,47 @@
       (should (eq (excali-cursor-test--map-pointer map '(10.0 . 45.0)) 'hand))
       (should (eq (excali-cursor-test--map-pointer map '(60.0 . 45.0)) 'arrow)))))
 
-(ert-deftest excali-cursor-test-map-has-no-ids ()
-  "Hot spots carry no id, so clicks on them stay text-area events."
+(ert-deftest excali-cursor-test-map-ids ()
+  "Every hot spot has the canvas id, the prefix key its clicks carry."
   (excali-cursor-test--with-rect _rect
     (excali-cursor-test--busy-scene)
-    (should (seq-every-p (lambda (entry) (null (nth 1 entry))) (excali--pointer-map)))))
+    (should (seq-every-p (lambda (entry) (eq (nth 1 entry) 'excali-canvas))
+                         (excali--pointer-map)))))
+
+(ert-deftest excali-cursor-test-hot-spot-clicks-reach-commands ()
+  "Clicks over hot spots arrive prefixed and still run the mode's commands.
+This is the path GUI events take: Emacs puts the hot spot's id in the
+event position, and `read-key-sequence' turns it into a prefix key."
+  (excali-cursor-test--with-rect _rect
+    (excali-mode)
+    (set-window-buffer (selected-window) (current-buffer))
+    (let* ((window (selected-window))
+           (posn (list window 'excali-canvas '(30 . 40) 0 nil 1 '(0 . 0) nil '(30 . 40) '(1 . 1)))
+           (read (lambda (event)
+                   (let ((unread-command-events (list event)))
+                     (read-key-sequence nil)))))
+      ;; A GUI session marks these when it first makes such events.
+      (dolist (sym '(down-mouse-1 C-M-down-mouse-1 double-down-mouse-1 down-mouse-2
+                     mouse-1 double-mouse-1 mouse-3))
+        (put sym 'event-kind 'mouse-click))
+      (dolist (case `((down-mouse-1 . excali-mouse-down)
+                      (C-M-down-mouse-1 . excali-mouse-down)
+                      (double-down-mouse-1 . excali-double-click)
+                      (down-mouse-2 . excali-mouse-pan)
+                      (mouse-1 . ignore) (double-mouse-1 . ignore) (mouse-3 . ignore)))
+        (let ((keys (funcall read (list (car case) posn))))
+          (should (equal (list (aref keys 0) (event-basic-type (aref keys 1))
+                               (event-modifiers (aref keys 1)))
+                         (list 'excali-canvas (event-basic-type (car case))
+                               (event-modifiers (car case)))))
+          (should (eq (key-binding keys t) (cdr case)))))
+      ;; Motion is not prefixed, but its area is the hot spot's id.
+      (put 'mouse-movement 'event-kind 'mouse-movement)
+      (let ((keys (funcall read (list 'mouse-movement posn))))
+        (should (eq (key-binding keys t) 'excali-mouse-move))
+        (should (excali--canvas-area-p (event-start (aref keys 0)))))
+      ;; Such events still give window coordinates.
+      (should (equal (excali--event-window-xy (list 'down-mouse-1 posn)) '(30 . 40))))))
 
 (ert-deftest excali-cursor-test-update-sets-map-in-place ()
   "The map goes into each surface's spec in place, translated, only on change."

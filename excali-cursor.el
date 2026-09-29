@@ -17,8 +17,9 @@
 ;; does: every command rebuilds a list of hot spots (handles, link icons,
 ;; line points, elements and the selection box, each with the nearest
 ;; shape Emacs' `pointer' offers), and Emacs itself switches the pointer
-;; as the mouse crosses them, with no Lisp round trip.  Hot spots carry
-;; no id, so clicks on them stay ordinary text-area events.  The map is
+;; as the mouse crosses them, with no Lisp round trip.  Mouse events
+;; over them carry the prefix key `excali-canvas' (`excali--hot-spot-id'),
+;; which the keymap maps back onto itself.  The map is
 ;; changed in place and put first in the image spec, where it does not
 ;; enter the image cache's hash, so updating it never re-creates the
 ;; canvas image.
@@ -168,10 +169,15 @@ Emacs offers no diagonal resize, move, crosshair or rotate pointer.")
   (cons (round (* (+ (car point) excali--scroll-x) excali--zoom))
         (round (* (+ (cdr point) excali--scroll-y) excali--zoom))))
 
+(defconst excali--hot-spot-id 'excali-canvas
+  "Id of every hot spot on the canvas.
+Mouse events over a hot spot come with its id as a prefix key, like
+mode-line clicks; `excali-mode-map' binds the prefix to itself.  A nil
+id would not avoid that: nil is a symbol too, and so a prefix key.")
+
 (defun excali--hot-spot (area cursor)
-  "Return a map entry showing CURSOR over AREA.
-The id is nil so that clicks there stay plain text-area events."
-  (list area nil (list 'pointer (excali--emacs-pointer cursor))))
+  "Return a map entry showing CURSOR over AREA."
+  (list area excali--hot-spot-id (list 'pointer (excali--emacs-pointer cursor))))
 
 (defun excali--hot-rect (x1 y1 x2 y2)
   "Return the area of the scene rectangle X1 Y1 X2 Y2."

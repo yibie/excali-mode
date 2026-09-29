@@ -56,7 +56,7 @@ The box is the selection bounds padded like `draw_selection'."
   (interactive "e")
   (let ((posn (event-start event)))
     (when (and (eq (posn-window posn) (get-buffer-window (current-buffer)))
-               (null (posn-area posn)))
+               (excali--canvas-area-p posn))
       (let ((xy (excali--event-scene-xy event)))
         (when excali--multi-element
           (excali--multi-move xy))

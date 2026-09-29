@@ -203,6 +203,14 @@ or deselect."
   "C-c C-r" #'excali--sync-canvas
   "?" #'describe-mode)
 
+;; Mouse events over the canvas's hot spots (excali-cursor.el) arrive
+;; with the prefix key `excali-canvas'.  Under it the mode's own bindings
+;; apply; anything else under it is ignored rather than undefined.
+(let ((canvas (make-sparse-keymap)))
+  (set-keymap-parent canvas excali-mode-map)
+  (define-key canvas [t] #'ignore)
+  (define-key excali-mode-map [excali-canvas] canvas))
+
 (define-derived-mode excali-mode special-mode "Excali"
   "Major mode for editing Excalidraw scenes on a Canvas image."
   (setq-local cursor-type nil

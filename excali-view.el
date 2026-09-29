@@ -568,13 +568,17 @@ which `excali--plan-repaint' detects by itself."
        ,@body
        (excali--damage-union ,before (excali--device-rect ,el)))))
 
+(defun excali--canvas-area-p (posn)
+  "Return non-nil if POSN is over the canvas: the text area or a hot spot."
+  (memq (posn-area posn) '(nil excali-canvas)))
+
 (defun excali--event-window-xy (event)
   "Return EVENT's position relative to the canvas window's text area.
 Positions over the mode line or outside the window are not relative to
 the text area, so fall back to the absolute pointer position."
   (let* ((posn (event-end event))
          (window (get-buffer-window (current-buffer))))
-    (if (and (eq (posn-window posn) window) (null (posn-area posn)))
+    (if (and (eq (posn-window posn) window) (excali--canvas-area-p posn))
         (posn-x-y posn)
       (let ((pointer (mouse-absolute-pixel-position))
             (edges (window-inside-absolute-pixel-edges window)))
