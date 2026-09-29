@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'excali-core)
+(require 'excali-view)
 (require 'excali-select)
 (require 'excali-handles)
 (require 'excali-hit)
@@ -401,7 +402,7 @@ The last entry covers everything with the current tool's shape."
           excali--cursor-view-shown excali--theme excali--pointer-surfaces)))
 
 (defun excali--schedule-pointer-update ()
-  "Rebuild the pointer map once Emacs has been idle a moment."
+  "Rebuild the pointer maps of every view once Emacs has been idle a moment."
   (unless excali--pointer-timer
     (let ((buffer (current-buffer)))
       (setq excali--pointer-timer
@@ -411,7 +412,11 @@ The last entry covers everything with the current tool's shape."
                (when (buffer-live-p buffer)
                  (with-current-buffer buffer
                    (setq excali--pointer-timer nil)
-                   (excali--update-pointer)))))))))
+                   ;; Each window's view has its own surfaces and map.
+                   (dolist (window (or (excali--view-windows) (list nil)))
+                     (if window
+                         (excali--with-view window (excali--update-pointer))
+                       (excali--update-pointer)))))))))))
 
 (defun excali--update-pointer (&optional force)
   "Rebuild the canvas pointer map if the scene or view changed.
