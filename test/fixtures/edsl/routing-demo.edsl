@@ -1,0 +1,61 @@
+---
+layout: dagre
+---
+
+# Advanced Routing Demo
+
+# Components
+server[Server]
+database[Database]
+cache[Cache]
+client[Client]
+queue[Queue]
+
+# Connections with different routing types
+connection {
+    from: "server";
+    to: "database";
+    style {
+        type: arrow;
+        label: "Orthogonal Route";
+        routing: orthogonal;
+        color: "#2196F3";
+        width: 2;
+    }
+}
+
+connection {
+    from: "server";
+    to: "cache";
+    style {
+        type: arrow;
+        label: "Curved Route";
+        routing: curved;
+        color: "#4CAF50";
+        width: 2;
+    }
+}
+
+connection {
+    from: "client";
+    to: "server";
+    style {
+        type: arrow;
+        label: "Straight Route";
+        routing: straight;
+        color: "#FF9800";
+        width: 2;
+    }
+}
+
+connections {
+    from: "queue";
+    to: ["server", "database", "cache"];
+    style {
+        type: arrow;
+        label: "Auto Route";
+        routing: auto;
+        color: "#9C27B0";
+        width: 2;
+    }
+}

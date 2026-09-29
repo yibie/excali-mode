@@ -29,6 +29,9 @@ and it needs Emacs 32 (master) — the first Emacs with the canvas API.
   library (=.excalidrawlib=) with the official collection of
   libraries.excalidraw.com one command away, and PNG/SVG export with the
   scene embedded so Excalidraw can open the export again.
+- Diagrams from text: the =.edsl= language of [[https://github.com/tyrchen/excalidraw-dsl][excalidraw-dsl]], laid out
+  automatically and drawn with bound arrows and labels you can go on
+  editing.
 - Smooth on large scenes: only damaged areas repaint, panning reuses
   pixels, zooming shows an instant preview, and on macOS a CoreAnimation
   layer bypasses Emacs's image refresh.
@@ -148,6 +151,72 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 | =s-s=, =C-x C-s= | save |
 | =s-E=, =C-c C-e= | export PNG or SVG (by extension; the selection if any, =C-u= for all) |
 | =C-c C-b=, =C-c C-p= | cycle backend, toggle 1x/2x (debug) |
+
+* Drawing from text
+
+=excali-dsl-mode= edits =.edsl= files, the language of [[https://github.com/tyrchen/excalidraw-dsl][excalidraw-dsl]];
+=C-c C-c= draws the buffer in an excali buffer beside it (again: the
+same buffer, same view), =C-c C-e= writes an =.excalidraw= file.  The
+layout is layered, like dagre: nodes by rank along the edges, each
+container laid out on its own and placed as one block, and straight
+edges bent around the shapes in their way.  Everything drawn is
+ordinary Excalidraw: arrows are bound and follow their shapes, labels
+are bound text.
+
+#+begin_src text
+---
+direction: LR            # TB (default), BT, LR, RL
+nodeSpacing: 60
+rankSpacing: 90
+---
+componentType service {
+  shape: rectangle;
+  style { fill: "#e3f2fd"; strokeColor: "#1976d2"; }
+}
+
+client[Web Client]
+container "Backend" as backend {
+  api[API] { type: service }
+  db[Database] { shape: ellipse; backgroundColor: "#fce4ec" }
+  api -> db: query
+}
+client -> api: HTTPS
+api -> cache -> db       # a chain; `cache' is made on first use
+db <-> replica @orthogonal
+#+end_src
+
+- Nodes: =id=, =id[Label]= or =id "Label"=, then =@type= or a
+  ={ key: value; ... }= block: =shape= (rectangle, ellipse, diamond,
+  cylinder, text), =backgroundColor= or =fill=, =strokeColor=,
+  =strokeWidth=, =strokeStyle=, =fillStyle=, =roughness=, =roundness=,
+  =opacity=, =font=, =fontSize=, =textColor=, =width=, =height=, =type=.
+- Edges: =->=, =<->=, =--= or =---= (no heads), =~>= (curved); labels
+  as =a -> b: text=, =a -> b "text"= or =a -> b {text}=; a style block
+  with =strokeColor= or =color=, =strokeWidth= or =width=,
+  =strokeStyle=, =startArrowhead=, =endArrowhead= and =routing=
+  (straight, orthogonal, curved); or =@orthogonal=, =@curved=.
+- Containers, =container "Label" as id { ... }= or =container id "Label"
+  {=, and groups, =group=, =flow=, =service=, =layer=, =component=,
+  =subsystem=, =zone= or =cluster= followed by a label, nest.  A
+  cluster's own =key: value= lines or =style: { ... }= style it, and
+  =layout: horizontal=, =vertical= or =grid(N)= arranges members without
+  edges.  =backend.api= refers to =api= in =backend=.
+- =componentType=, =connection= and =connections= blocks, front matter
+  =component_types= and =templates=, and =template= with =layers= plus
+  =diagram "Title" { template: name }=.
+- Front matter: =direction= (or =rankdir=, =layout_options=),
+  =nodeSpacing= or =nodesep=, =rankSpacing= or =ranksep=, =theme= (dark),
+  =font=, =sketchiness=, =stroke_width=, =background_color=, =routing=.
+
+From Lisp, =(excali-dsl-elements STRING)= returns the elements and
+=(excali-dsl-scene STRING)= a whole document.  In an excali buffer
+=M-x excali-dsl-yank= adds the diagram on the kill ring at the view
+center, =M-x excali-dsl-insert-file= one from a file.  Errors name
+their line.  =docs/dsl.md= is a compact reference of the language.
+
+Not supported: the force and ELK layouts (the layered one is used),
+upstream's ML layout, and template layouts other than per-layer
+=horizontal=, =vertical= and =grid(N)=.
 
 * Presentation backends
 
@@ -300,6 +369,10 @@ No dark-mode export yet.
 - =excali-frame-render.el= — frame titles, name label bounds, frame
   render data.
 - =excali-export.el= — PNG/SVG export and import of embedded scenes.
+- =excali-dsl.el= — the =.edsl= diagram language: parser, model, drawing,
+  =excali-dsl-mode=.
+- =excali-dsl-layout.el= — layered graph layout (cycle breaking,
+  layering, crossing reduction, least-squares placement).
 - =excali-bench.el= — backend benchmarks.
 - =excali.el= — keymap, major mode and entry points.
 

@@ -1,0 +1,4 @@
+These .edsl files are examples from excalidraw-dsl
+(https://github.com/tyrchen/excalidraw-dsl, examples/), copied unchanged
+under its MIT license; see THIRD-PARTY-NOTICES.  test/excali-dsl-test.el
+draws every one of them.

@@ -1,0 +1,30 @@
+---
+layout: dagre
+theme: light
+---
+
+# Nested Container Example
+
+container "Application Layer" {
+    frontend[Frontend]
+
+    container "Services" {
+        auth[Auth Service]
+        api[API Gateway]
+
+        auth -> api: "validates"
+    }
+
+    frontend -> api: "requests"
+}
+
+container "Data Layer" {
+    db[Database]
+    cache[Redis Cache]
+
+    cache -> db: "cache miss"
+}
+
+# Cross-container connections
+api -> cache: "query"
+api -> db: "persist"

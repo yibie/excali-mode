@@ -1,0 +1,31 @@
+---
+layout: dagre
+---
+
+# Decision Tree Example
+# Shows how to create decision trees with conditional paths
+
+# Root node
+problem[Problem Identified]
+
+# Decision nodes  
+urgent[Urgent?]
+complex[Complex?]
+resources[Resources Available?]
+
+# Action nodes
+escalate[Escalate Immediately]
+analyze[Deep Analysis Required]
+quick_fix[Apply Quick Fix]
+schedule[Schedule for Later]
+delegate[Delegate to Team]
+
+# Define the decision flow (acyclic)
+problem -> urgent
+urgent -> escalate: Yes
+urgent -> complex: No
+complex -> analyze: Yes
+complex -> resources: No
+resources -> quick_fix: Yes
+resources -> schedule: No
+analyze -> delegate

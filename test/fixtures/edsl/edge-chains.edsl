@@ -1,0 +1,20 @@
+---
+layout: dagre
+---
+
+# Edge Chain Example
+
+# Simple chain
+a[Start]
+b[Step 1]
+c[Step 2]
+d[End]
+
+a -> b -> c -> d
+
+# Another chain with labels
+x[X]
+y[Y]
+z[Z]
+
+x -> y -> z: "flow"

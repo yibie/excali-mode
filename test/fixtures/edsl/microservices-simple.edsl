@@ -1,0 +1,127 @@
+---
+layout: dagre
+direction: TB
+nodeSpacing: 100
+rankSpacing: 150
+---
+
+# Simplified Microservices Architecture
+# Core services with databases and external connections
+
+# External Layer
+client[Web Client] {
+  shape: "rectangle";
+  strokeColor: "#3b82f6";
+  backgroundColor: "#dbeafe";
+  width: 120;
+  height: 60;
+}
+
+mobile[Mobile App] {
+  shape: "rectangle";
+  strokeColor: "#3b82f6";
+  backgroundColor: "#dbeafe";
+  width: 120;
+  height: 60;
+}
+
+# API Gateway Layer
+gateway[API Gateway] {
+  shape: "rectangle";
+  strokeColor: "#f59e0b";
+  backgroundColor: "#fef3c7";
+  strokeWidth: 3;
+  width: 180;
+  height: 80;
+}
+
+# Core Services
+authservice[Auth Service] {
+  shape: "rectangle";
+  strokeColor: "#8b5cf6";
+  backgroundColor: "#f3e8ff";
+  width: 150;
+  height: 70;
+}
+
+userservice[User Service] {
+  shape: "rectangle";
+  strokeColor: "#10b981";
+  backgroundColor: "#d1fae5";
+  width: 150;
+  height: 70;
+}
+
+productservice[Product Service] {
+  shape: "rectangle";
+  strokeColor: "#f97316";
+  backgroundColor: "#fed7aa";
+  width: 160;
+  height: 70;
+}
+
+orderservice[Order Service] {
+  shape: "rectangle";
+  strokeColor: "#be123c";
+  backgroundColor: "#fecdd3";
+  width: 150;
+  height: 70;
+}
+
+# Databases
+authdb[Auth Database] {
+  shape: "ellipse";
+  strokeColor: "#6366f1";
+  backgroundColor: "#e0e7ff";
+  fill: "hachure";
+  width: 140;
+  height: 80;
+}
+
+userdb[User Database] {
+  shape: "ellipse";
+  strokeColor: "#059669";
+  backgroundColor: "#a7f3d0";
+  fill: "hachure";
+  width: 140;
+  height: 80;
+}
+
+productdb[Product Database] {
+  shape: "ellipse";
+  strokeColor: "#ea580c";
+  backgroundColor: "#fdba74";
+  fill: "hachure";
+  width: 150;
+  height: 80;
+}
+
+orderdb[Order Database] {
+  shape: "ellipse";
+  strokeColor: "#be123c";
+  backgroundColor: "#fda4af";
+  fill: "hachure";
+  width: 140;
+  height: 80;
+}
+
+# Client connections
+client -> gateway: HTTPS
+mobile -> gateway: HTTPS
+
+# Gateway to services
+gateway -> authservice: Auth Requests
+gateway -> userservice: User API
+gateway -> productservice: Product API
+gateway -> orderservice: Order API
+
+# Service to database connections
+authservice -> authdb: Store Users
+userservice -> userdb: User Data
+productservice -> productdb: Product Data
+orderservice -> orderdb: Order Data
+
+# Inter-service communications
+orderservice -> userservice: Get User Info
+orderservice -> productservice: Check Inventory
+userservice -> authservice: Validate Token

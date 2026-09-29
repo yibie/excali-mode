@@ -1,0 +1,63 @@
+---
+layout: elk
+direction: TB
+theme: light
+---
+
+# Test Container-to-Container Connections
+
+container "Box A" as boxA {
+  style: {
+    backgroundColor: "#e0f2fe";
+    strokeColor: "#0284c7";
+  }
+
+  node1[Node 1] {
+    backgroundColor: "#7dd3fc";
+  }
+
+  node2[Node 2] {
+    backgroundColor: "#7dd3fc";
+  }
+
+  node1 -> node2: "Internal";
+}
+
+container "Box B" as boxB {
+  style: {
+    backgroundColor: "#fef3c7";
+    strokeColor: "#f59e0b";
+  }
+
+  node3[Node 3] {
+    backgroundColor: "#fde68a";
+  }
+
+  node4[Node 4] {
+    backgroundColor: "#fde68a";
+  }
+
+  node3 -> node4: "Internal";
+}
+
+container "Box C" as boxC {
+  style: {
+    backgroundColor: "#ecfdf5";
+    strokeColor: "#10b981";
+  }
+
+  node5[Node 5] {
+    backgroundColor: "#86efac";
+  }
+
+  node6[Node 6] {
+    backgroundColor: "#86efac";
+  }
+
+  node5 -> node6: "Internal";
+}
+
+# Container to container connections
+boxA -> boxB: "A to B";
+boxB -> boxC: "B to C";
+boxA -> boxC: "A to C";

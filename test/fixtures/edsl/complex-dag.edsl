@@ -1,0 +1,43 @@
+---
+layout: dagre
+---
+
+# Complex DAG to showcase improved layout
+# This tests the longest-path ranking and barycenter crossing minimization
+
+# Layer 1 - Sources
+input_a[Input A]
+input_b[Input B]
+input_c[Input C]
+
+# Layer 2 - Processing
+process_1[Process 1]
+process_2[Process 2]
+process_3[Process 3]
+
+# Layer 3 - Analysis
+analyze_1[Analyze 1]
+analyze_2[Analyze 2]
+
+# Layer 4 - Output
+output[Final Output]
+
+# Complex connections to test crossing minimization
+input_a -> process_1
+input_a -> process_2
+input_b -> process_1
+input_b -> process_3
+input_c -> process_2
+input_c -> process_3
+
+process_1 -> analyze_1
+process_2 -> analyze_1
+process_2 -> analyze_2
+process_3 -> analyze_2
+
+analyze_1 -> output
+analyze_2 -> output
+
+# Additional long-range connections to test layout
+input_a -> analyze_2: "bypass"
+process_1 -> output: "direct"
