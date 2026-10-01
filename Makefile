@@ -160,10 +160,10 @@ bench: compile
 hero: compile
 	rm -rf build/hero && mkdir -p build/hero
 	EXCALI_HERO_FRAMES=$(CURDIR)/build/hero $(EMACS) -Q --batch -L $(CURDIR) \
-	  -l $(CURDIR)/docs/media/hero.el -f hero-render
+	  -l $(CURDIR)/hero/hero.el -f hero-render
 	ffmpeg -loglevel error -y -framerate 30 -i build/hero/f%05d.png \
 	  -vf "fps=15,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
-	  docs/media/hero.gif
+	  hero/hero.gif
 	ffmpeg -loglevel error -y -framerate 30 -i build/hero/f%05d.png \
 	  -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart build/hero.mp4
 

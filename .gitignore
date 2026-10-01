@@ -7,3 +7,10 @@ build/
 bench.txt
 fonts/*/
 .DS_Store
+
+# The demo video's recording scripts and video project, kept local
+/demo/video/
+/demo/demo.el
+/demo/dry.el
+/demo/Makefile
+/demo/record.sh

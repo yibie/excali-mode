@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; Renders docs/media/hero.gif frame by frame with excali's own renderer
+;; Renders hero/hero.gif frame by frame with excali's own renderer
 ;; and commands, in batch: a shape is drawn and labelled, a flowchart
 ;; grows from it with Mod+Arrow, a node is dragged while its elbow
 ;; arrows re-route, a pen stroke circles the result, and the theme

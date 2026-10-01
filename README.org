@@ -1,6 +1,6 @@
 #+title: excali-mode — Excalidraw inside Emacs
 
-#+html: <p align="center"><img src="docs/media/hero.gif" alt="Drawing, binding arrows and growing a flowchart in excali-mode" width="800"></p>
+#+html: <p align="center"><img src="hero/hero.gif" alt="Drawing, binding arrows and growing a flowchart in excali-mode" width="800"></p>
 
 excali-mode opens, edits and saves [[https://excalidraw.com][Excalidraw]] drawings in Emacs.  The
 =.excalidraw= files are the same ones the web app reads and writes, and
@@ -404,6 +404,12 @@ stands in.  Linux and Windows builds are cross-compiled but not run.
 * Changes
 
 See =CHANGELOG.org=.
+
+* Acknowledgements
+
+excali-mode was indirectly inspired by [[https://github.com/0WD0/video.el][video.el]],
+which uses Emacs's Canvas API to display images and video inside the
+editor.
 
 * License
 
