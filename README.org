@@ -61,6 +61,37 @@ where it can.
 =M-x excali-open= opens a =.excalidraw= file (or a PNG/SVG exported with
 an embedded scene); =M-x excali-new= starts an empty drawing.
 
+** With elpaca
+
+[[https://www.reddit.com/user/ZeStig2409/][u/ZeStig2409]] [[https://www.reddit.com/r/emacs/comments/1wuc6bk/comment/pdkgivo/][shared this setup on r/emacs]], noting it works on Emacs 31 too
+with the Emacs patch.  Elpaca builds the package in its own directory,
+so the compiled module is linked in there:
+
+#+begin_src shell
+cd /path/to/excali-mode
+make
+ln -sf /path/to/excali-mode/excali-module.so ~/.config/emacs/elpaca/builds/excali/excali-module.so
+#+end_src
+
+#+begin_src emacs-lisp
+(use-package excali
+  ;; :vc :url "https://github.com/yibie/excali-mode" :branch "v0.1.1"
+  :ensure (:repo "/path/to/excali-mode"
+           :pre-build (("ln" "-s" "/path/to/excali-mode/excali-module.so" "."))) ;; you could do this manually as well.
+  :config
+  (add-hook 'excali-mode-hook
+            (lambda ()
+              (when (fboundp 'evil-local-mode)
+                (evil-local-mode -1))
+              (when (fboundp 'which-key-mode)
+                (which-key-mode -1)))))
+#+end_src
+
+The hook turns off Evil and which-key in excali buffers, whose keys
+excali uses itself.  Note that =which-key-mode= is global: turning it off
+there turns it off in every buffer until you turn it on again.  On macOS
+the module is =excali-module.dylib=.
+
 * Build and test
 
 #+begin_src shell
