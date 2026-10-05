@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 yibie
 
 ;; Author: yibie <yibie@outlook.com>
-;; Version: 0.1.1
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "32.0"))
 ;; Keywords: multimedia, tools
 ;; URL: https://github.com/yibie/excali-mode

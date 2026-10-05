@@ -1,5 +1,38 @@
 #+title: Changelog
 
+* 0.2.0 — 2026-10-04
+
+** Breaking
+
+- Replace the old =.edsl= language with *Excali DSL* (=.excalidsl=):
+  explicit node/edge declarations, dotted containment, relative placement,
+  and separate style blocks. Old syntax is no longer parsed.
+
+** New
+
+- =ob-excali= Org Babel adapter: =excali= source blocks export SVG, PNG or
+  editable scenes, with source editing, atomic output and normal Babel confirmation.
+- Document-wide styles and node/edge defaults with strict validation.
+- Joint relative layout and container sizing; explicit arrow attachment sides.
+- Source-located errors, deterministic sketch seeds, and atomic scene export.
+- Runnable examples and the language reference in =docs/excali-dsl.md=.
+
+** Fixed
+
+- Load the canvas entry points when previewing directly from an autoloaded DSL
+  mode, without requiring a drawing to be opened first.
+- Keep the source buffer's preview association when opening a canvas, so repeated
+  =C-c C-c= refreshes the same scene.
+
+** Upgrade
+
+- Rewrite old =.edsl= documents using the new syntax; changing the extension alone
+  is not a conversion. Use =.excalidsl= for source, not =.excalidraw= JSON scenes.
+- Register =excali-dsl-mode= explicitly in deferred local-clone configurations;
+  README includes a complete example and recovery steps for wrong associations.
+- Enable =(excali . t)= with =org-babel-do-load-languages= to use Org blocks.
+  Keep other enabled Babel languages and the normal execution confirmation.
+
 * 0.1.1 — 2026-09-29
 
 ** Breaking

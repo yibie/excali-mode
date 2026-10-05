@@ -4,31 +4,8 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-
-;; A text language for diagrams, compatible with the `.edsl' files of
-;; excalidraw-dsl (github.com/tyrchen/excalidraw-dsl): nodes, edges and
-;; edge chains, containers and groups, component types, connection
-;; blocks and layer templates, under optional YAML front matter.  A
-;; scene is laid out automatically (excali-dsl-layout.el) and drawn with
-;; excali's own elements, so arrows stay bound to their shapes and labels
-;; to their containers when the result is edited.
-;;
-;;     ---
-;;     direction: LR
-;;     ---
-;;     client[Web Client]
-;;     container "Backend" as backend {
-;;       api[API] { backgroundColor: "#a5d8ff" }
-;;       db[Database] { shape: ellipse }
-;;       api -> db: query
-;;     }
-;;     client -> api: HTTPS
-;;
-;; Entry points: `excali-dsl-mode' for .edsl files, where C-c C-c draws
-;; the buffer (`excali-dsl-render'); `excali-dsl-yank' and
-;; `excali-dsl-insert-file' add a diagram to an excali scene; and the
-;; functions `excali-dsl-parse', `excali-dsl-elements' and
-;; `excali-dsl-scene' for programs.  docs/dsl.md lists the syntax.
+;; Excali DSL (.excalidsl) describes nodes, relative placement, bound arrows
+;; and explicit style blocks.  See docs/excali-dsl.md for the language.
 
 ;;; Code:
 
@@ -40,7 +17,8 @@
 (require 'excali-binding)
 (require 'excali-elbow)
 (require 'excali-restore)
-(require 'excali-dsl-layout)
+(require 'excali-dsl-parser)
+(require 'excali-dsl-constraints)
 
 (declare-function excali--open "excali")
 (declare-function excali--insert-elements "excali-clipboard")
@@ -58,559 +36,12 @@
   :group 'excali)
 
 (defcustom excali-dsl-render-on-save nil
-  "Non-nil means saving an .edsl buffer draws it again, if drawn before."
+  "Non-nil means saving an .excalidsl buffer draws it again, if drawn before."
   :type 'boolean)
 
 (defcustom excali-dsl-indent-offset 2
   "Indentation step of `excali-dsl-mode'."
   :type 'integer)
-
-(define-error 'excali-dsl-error "Diagram DSL error")
-
-(defvar excali-dsl--templates nil
-  "Templates known while parsing: name to (KIND . DEFINITION).")
-
-;;;; Errors
-
-(defun excali-dsl--error (format-string &rest args)
-  "Signal `excali-dsl-error' at the current line with FORMAT-STRING, ARGS."
-  (signal 'excali-dsl-error (list (line-number-at-pos) (apply #'format format-string args))))
-
-(defun excali-dsl-error-message (err)
-  "Return a message for the `excali-dsl-error' ERR."
-  (format "line %d: %s" (nth 1 err) (nth 2 err)))
-
-;;;; YAML front matter (the subset .edsl files use)
-
-(defun excali-dsl--yaml-scalar (text)
-  "Return the YAML scalar TEXT as a Lisp value."
-  (let ((text (string-trim text)))
-    (cond
-     ((string-match "\\`\"\\(\\(?:[^\"\\\\]\\|\\\\.\\)*\\)\"" text)
-      (replace-regexp-in-string "\\\\\\(.\\)" "\\1" (match-string 1 text) t))
-     ((string-match "\\`'\\([^']*\\)'" text) (match-string 1 text))
-     ((string-match-p "\\`-?[0-9]+\\(\\.[0-9]+\\)?\\'" text) (string-to-number text))
-     ((member text '("true" "yes" "on")) t)
-     ((member text '("false" "no" "off")) :false)
-     ((member text '("null" "~" "")) nil)
-     ((string-match "\\`\\[\\(.*\\)\\]\\'" text)
-      (vconcat (mapcar #'excali-dsl--yaml-scalar
-                       (split-string (match-string 1 text) "," t "[ \t]+"))))
-     ;; An unquoted value ends at a comment.
-     ((string-match "\\`\\(.*?\\)[ \t]+#" text) (string-trim (match-string 1 text)))
-     (t text))))
-
-(defun excali-dsl--yaml-lines (text)
-  "Return TEXT's meaningful lines as (INDENT . CONTENT)."
-  (let (lines)
-    (dolist (line (split-string text "\n") (nreverse lines))
-      (unless (string-match-p "\\`[ \t]*\\(#.*\\)?\\'" line)
-        (string-match "\\`\\([ \t]*\\)\\(.*\\)" line)
-        (push (cons (length (match-string 1 line)) (string-trim-right (match-string 2 line)))
-              lines)))))
-
-(defun excali-dsl--yaml-block (lines indent)
-  "Parse LINES (a list, consumed from its head) at INDENT.
-Return (VALUE . REST): an alist of (KEY . VALUE) with string keys, or
-a vector for a list of `- ' items."
-  (if (and lines (string-prefix-p "- " (concat (cdar lines) " ")))
-      (let (items)
-        (while (and lines (= (caar lines) indent) (string-prefix-p "-" (cdar lines)))
-          (push (excali-dsl--yaml-scalar (substring (cdar lines) 1)) items)
-          (setq lines (cdr lines)))
-        (cons (vconcat (nreverse items)) lines))
-    (let (entries)
-      (while (and lines (= (caar lines) indent))
-        (let ((content (cdar lines)))
-          (setq lines (cdr lines))
-          (if (string-match "\\`\\(\"[^\"]*\"\\|[^:]+?\\)[ \t]*:\\(?:[ \t]+\\(.*\\)\\)?\\'" content)
-              (let ((key (excali-dsl--yaml-scalar (match-string 1 content)))
-                    (value (match-string 2 content)))
-                (if (and (or (null value) (string-empty-p (string-trim value)))
-                         lines (> (caar lines) indent))
-                    (let ((nested (excali-dsl--yaml-block lines (caar lines))))
-                      (push (cons (format "%s" key) (car nested)) entries)
-                      (setq lines (cdr nested)))
-                  (push (cons (format "%s" key) (excali-dsl--yaml-scalar (or value ""))) entries)))
-            ;; Anything else (an odd line) is skipped with its children.
-            (while (and lines (> (caar lines) indent)) (setq lines (cdr lines))))))
-      (cons (nreverse entries) lines))))
-
-(defun excali-dsl--parse-yaml (text)
-  "Parse the front matter TEXT into an alist with string keys."
-  (let ((lines (excali-dsl--yaml-lines text)))
-    (if lines (car (excali-dsl--yaml-block lines (caar lines))) nil)))
-
-;;;; Lexing
-
-(defconst excali-dsl--id-regexp "[[:alnum:]_.]+" "Node ids.")
-(defconst excali-dsl--arrow-regexp "<->\\|->\\|---\\|--\\|~>" "Edge operators.")
-(defconst excali-dsl--group-keywords
-  '("group" "flow" "service" "layer" "component" "subsystem" "zone" "cluster")
-  "Words starting a group: basic, flow and semantic groups.")
-
-(defun excali-dsl--skip ()
-  "Skip whitespace, comments and statement separators."
-  (while (progn (skip-chars-forward " \t\r\n;")
-                (when (eq (char-after) ?#)
-                  (skip-chars-forward "^\n")
-                  t))))
-
-(defun excali-dsl--skip-blank ()
-  "Skip spaces and tabs only."
-  (skip-chars-forward " \t\r"))
-
-(defun excali-dsl--looking-at-word (word)
-  "Return non-nil if WORD, as a whole word, is at point."
-  (looking-at (concat (regexp-quote word) "\\_>")))
-
-(defun excali-dsl--read-id (&optional what)
-  "Read an id at point, or signal an error mentioning WHAT."
-  (if (looking-at excali-dsl--id-regexp)
-      (progn (goto-char (match-end 0)) (match-string-no-properties 0))
-    (excali-dsl--error "Expected %s" (or what "an id"))))
-
-(defun excali-dsl--read-string ()
-  "Read a double-quoted string at point, or return nil."
-  (when (looking-at "\"\\(\\(?:[^\"\\\\]\\|\\\\.\\)*\\)\"")
-    (goto-char (match-end 0))
-    (replace-regexp-in-string "\\\\\\(.\\)" "\\1" (match-string-no-properties 1) t)))
-
-(defun excali-dsl--read-bracket-label ()
-  "Read a `[label]' at point, or return nil."
-  (when (looking-at "\\[\\([^]\"\n[]*\\)\\]")
-    (goto-char (match-end 0))
-    (string-trim (match-string-no-properties 1))))
-
-(defun excali-dsl--expect (char)
-  "Skip blanks and CHAR, or signal an error."
-  (excali-dsl--skip)
-  (if (eq (char-after) char)
-      (forward-char)
-    (excali-dsl--error "Expected `%c'" char)))
-
-;;;; Blocks: { key: value; ... }
-
-(defun excali-dsl--read-value ()
-  "Read an attribute value at point: string, list, number, color or word."
-  (excali-dsl--skip-blank)
-  (cond
-   ((eq (char-after) ?\") (excali-dsl--read-string))
-   ((eq (char-after) ?\[)
-    (forward-char)
-    (let (items)
-      (while (progn (excali-dsl--skip)
-                    (not (eq (char-after) ?\])))
-        (when (eobp) (excali-dsl--error "Missing `]'"))
-        (push (or (excali-dsl--read-string)
-                  (excali-dsl--read-id "a list item"))
-              items)
-        (excali-dsl--skip)
-        (when (eq (char-after) ?,) (forward-char)))
-      (forward-char)
-      (vconcat (nreverse items))))
-   ((looking-at "\\(-?[0-9]+\\(?:\\.[0-9]+\\)?\\)\\(?:px\\)?\\(?:[ \t]*\\(?:[;,}\n]\\|\\'\\)\\)")
-    (goto-char (match-end 1))
-    (when (looking-at "px") (forward-char 2))
-    (string-to-number (match-string 1)))
-   ((looking-at "#[[:xdigit:]]\\{3,8\\}\\_>")
-    (goto-char (match-end 0))
-    (match-string-no-properties 0))
-   ((looking-at "\\(true\\|false\\)\\_>")
-    (goto-char (match-end 0))
-    (if (equal (match-string 1) "true") t :false))
-   ((looking-at "[^;,}\n]+")
-    (goto-char (match-end 0))
-    (string-trim (match-string-no-properties 0)))
-   (t (excali-dsl--error "Expected a value"))))
-
-(defun excali-dsl--read-block ()
-  "Read a `{ ... }' block at point and return its entries.
-Entries are (KEY . VALUE) with string keys; a nested block's value is
-its own list of entries, a list's a vector."
-  (excali-dsl--expect ?{)
-  (let (entries)
-    (while (progn (excali-dsl--skip) (not (eq (char-after) ?})))
-      (when (eobp) (excali-dsl--error "Missing `}'"))
-      (let ((key (or (excali-dsl--read-string)
-                     (and (looking-at "[[:alnum:]_.-]+")
-                          (progn (goto-char (match-end 0)) (match-string-no-properties 0)))
-                     (excali-dsl--error "Expected an attribute name"))))
-        (excali-dsl--skip-blank)
-        (when (eq (char-after) ?:)
-          (forward-char)
-          (excali-dsl--skip-blank)
-          (when (eq (char-after) ?\n) (excali-dsl--skip)))
-        (push (cons key (if (eq (char-after) ?{)
-                            (excali-dsl--read-block)
-                          (excali-dsl--read-value)))
-              entries))
-      (excali-dsl--skip-blank)
-      (when (memq (char-after) '(?\; ?,)) (forward-char)))
-    (forward-char)
-    (nreverse entries)))
-
-(defun excali-dsl--brace-label-p ()
-  "Return non-nil if the `{' at point opens an edge label, not attributes.
-A label holds no `name:'."
-  (save-excursion
-    (forward-char)
-    (let ((start (point)))
-      (and (search-forward "}" (line-end-position) t)
-           (not (string-match-p "[[:alnum:]_\"]+[ \t]*:"
-                                (buffer-substring-no-properties start (1- (point)))))))))
-
-;;;; Statements
-
-(defun excali-dsl--parse-statements (&optional in-cluster)
-  "Parse statements up to a closing `}' when IN-CLUSTER, else to the end.
-Return a list of statements; in a cluster, attribute lines come back
-as (attrs . ENTRIES)."
-  (let (out)
-    (catch 'done
-      (while t
-        (excali-dsl--skip)
-        (cond
-         ((eobp)
-          (when in-cluster (excali-dsl--error "Missing `}'"))
-          (throw 'done nil))
-         ((eq (char-after) ?})
-          (unless in-cluster (excali-dsl--error "Unexpected `}'"))
-          (forward-char)
-          (throw 'done nil))
-         (t (setq out (append (reverse (excali-dsl--parse-statement in-cluster)) out))))))
-    (nreverse out)))
-
-(defun excali-dsl--keyword-form-p (word)
-  "Return non-nil if keyword WORD at point starts its own statement.
-That is when an arrow does not follow it, so a node may still be
-called `layer' or `service'."
-  (save-excursion
-    (goto-char (+ (point) (length word)))
-    (excali-dsl--skip-blank)
-    (not (or (looking-at excali-dsl--arrow-regexp)
-             (looking-at "\\[")
-             (eolp)))))
-
-(defun excali-dsl--parse-statement (in-cluster)
-  "Parse one statement at point; return a list of statements.
-IN-CLUSTER allows attribute lines."
-  (let ((line (line-number-at-pos)))
-    (cond
-     ((and (excali-dsl--looking-at-word "componentType")
-           (excali-dsl--keyword-form-p "componentType"))
-      (forward-char (length "componentType"))
-      (excali-dsl--skip)
-      (let* ((name (excali-dsl--read-id "a component type name"))
-             (body (progn (excali-dsl--skip) (excali-dsl--read-block))))
-        (list (list 'component-type :name name :body body :line line))))
-     ((and (excali-dsl--looking-at-word "container")
-           (excali-dsl--keyword-form-p "container"))
-      (forward-char (length "container"))
-      (list (excali-dsl--parse-cluster 'container "container" line)))
-     ((and (looking-at (concat (regexp-opt excali-dsl--group-keywords) "\\_>"))
-           (let ((word (match-string 0)))
-             (and (excali-dsl--keyword-form-p word)
-                  (save-excursion
-                    (goto-char (match-end 0))
-                    (excali-dsl--skip-blank)
-                    (or (eq (char-after) ?\")
-                        (and (member word '("group" "flow"))
-                             (looking-at excali-dsl--id-regexp)))))))
-      (looking-at (concat (regexp-opt excali-dsl--group-keywords) "\\_>"))
-      (let ((word (match-string-no-properties 0)))
-        (goto-char (match-end 0))
-        (list (excali-dsl--parse-cluster 'group word line))))
-     ((and (excali-dsl--looking-at-word "connections")
-           (excali-dsl--keyword-form-p "connections"))
-      (forward-char (length "connections"))
-      (excali-dsl--skip)
-      (excali-dsl--connection-edges (excali-dsl--read-block) line))
-     ((and (excali-dsl--looking-at-word "connection")
-           (excali-dsl--keyword-form-p "connection"))
-      (forward-char (length "connection"))
-      (excali-dsl--skip)
-      (excali-dsl--connection-edges (excali-dsl--read-block) line))
-     ((and (excali-dsl--looking-at-word "template")
-           (excali-dsl--keyword-form-p "template"))
-      (forward-char (length "template"))
-      (excali-dsl--skip)
-      (let* ((name (excali-dsl--read-id "a template name"))
-             (body (progn (excali-dsl--skip) (excali-dsl--read-block))))
-        (push (cons name (cons 'layers body)) excali-dsl--templates)
-        nil))
-     ((and (excali-dsl--looking-at-word "diagram")
-           (excali-dsl--keyword-form-p "diagram"))
-      (forward-char (length "diagram"))
-      (excali-dsl--skip)
-      (let* ((title (or (excali-dsl--read-string) (excali-dsl--read-id "a diagram title")))
-             (body (progn (excali-dsl--skip) (excali-dsl--read-block))))
-        (excali-dsl--diagram title body line)))
-     ((and (excali-dsl--looking-at-word "layout")
-           (save-excursion (forward-char 6) (excali-dsl--skip) (eq (char-after) ?{)))
-      (forward-char 6)
-      (excali-dsl--skip)
-      (list (list 'layout :body (excali-dsl--read-block) :line line)))
-     ((and in-cluster (looking-at "\\([[:alnum:]_]+\\)[ \t]*:\\([^:]\\|$\\)"))
-      ;; A cluster's own attribute, or `style: { ... }'.
-      (let ((key (match-string-no-properties 1)))
-        (goto-char (match-end 1))
-        (excali-dsl--skip-blank)
-        (forward-char)
-        (excali-dsl--skip-blank)
-        (if (eq (char-after) ?{)
-            (list (cons 'attrs (excali-dsl--read-block)))
-          (list (cons 'attrs (list (cons key (excali-dsl--read-value))))))))
-     ((and in-cluster (excali-dsl--looking-at-word "style")
-           (save-excursion (forward-char 5) (excali-dsl--skip) (eq (char-after) ?{)))
-      (forward-char 5)
-      (excali-dsl--skip)
-      (list (cons 'attrs (excali-dsl--read-block))))
-     ((looking-at excali-dsl--id-regexp)
-      (excali-dsl--parse-node-or-edges line))
-     (t (excali-dsl--error "Unexpected `%s'"
-                           (buffer-substring-no-properties
-                            (point) (min (line-end-position) (+ (point) 20))))))))
-
-(defun excali-dsl--parse-cluster (kind word line)
-  "Parse a container or group after its keyword WORD.
-KIND is `container' or `group'.  Upstream writes `container \"Label\"
-as id {'; the older `container id \"Label\" {' and `group id:type {'
-are read too."
-  (excali-dsl--skip-blank)
-  (let (id label type)
-    (when (and (looking-at excali-dsl--id-regexp) (not (excali-dsl--looking-at-word "as")))
-      (setq id (excali-dsl--read-id))
-      (when (eq (char-after) ?:)
-        (forward-char)
-        (setq type (excali-dsl--read-id "a group type")))
-      (excali-dsl--skip-blank))
-    (setq label (excali-dsl--read-string))
-    (excali-dsl--skip-blank)
-    (when (excali-dsl--looking-at-word "as")
-      (forward-char 2)
-      (excali-dsl--skip-blank)
-      (setq id (excali-dsl--read-id "an id after `as'")))
-    (excali-dsl--skip)
-    (unless (eq (char-after) ?{)
-      (excali-dsl--error "Expected `{' after %s" word))
-    (forward-char)
-    (let* ((body (excali-dsl--parse-statements t))
-           (attrs (apply #'append (mapcar #'cdr (seq-filter (lambda (s) (eq (car s) 'attrs)) body)))))
-      (list kind :id id :label label :kind (or type word) :attrs attrs
-            :body (seq-remove (lambda (s) (eq (car s) 'attrs)) body) :line line))))
-
-(defun excali-dsl--read-edge-label ()
-  "Read an edge label after `:' up to the end of the line, `;', `{' or `}'."
-  (excali-dsl--skip-blank)
-  (or (excali-dsl--read-string)
-      (when (looking-at "[^;{}\n]+")
-        (goto-char (match-end 0))
-        (let ((text (string-trim (match-string-no-properties 0))))
-          ;; A trailing comment is not part of the label.
-          (string-trim (replace-regexp-in-string "[ \t]+#.*\\'" "" text))))))
-
-(defun excali-dsl--parse-node-or-edges (line)
-  "Parse a node, an edge chain or a template instance at point.
-Return a list of statements, starting at LINE."
-  (let* ((id (excali-dsl--read-id))
-         (label (progn (excali-dsl--skip-blank)
-                       (or (excali-dsl--read-bracket-label) (excali-dsl--read-string))))
-         (template (assoc id excali-dsl--templates)))
-    (excali-dsl--skip-blank)
-    (cond
-     ;; `microservice user_service { name: "User" }'
-     ((and template (eq (cadr template) 'yaml) (null label)
-           (looking-at excali-dsl--id-regexp))
-      (let* ((instance (excali-dsl--read-id))
-             (params (progn (excali-dsl--skip) (if (eq (char-after) ?{) (excali-dsl--read-block) nil))))
-        (excali-dsl--instantiate-yaml (cddr template) instance params line)))
-     ((save-excursion (excali-dsl--skip) (looking-at excali-dsl--arrow-regexp))
-      (excali-dsl--parse-chain id label line))
-     (t
-      (let (type attrs)
-        (when (looking-at "@\\([[:alnum:]_]+\\)")
-          (setq type (match-string-no-properties 1))
-          (goto-char (match-end 0)))
-        (when (save-excursion (excali-dsl--skip) (eq (char-after) ?{))
-          (excali-dsl--skip)
-          (setq attrs (excali-dsl--read-block)))
-        (list (list 'node :id id :label label :type type :attrs attrs :line line)))))))
-
-(defun excali-dsl--parse-chain (first first-label line)
-  "Parse an edge chain starting at node FIRST (labelled FIRST-LABEL).
-Return node statements for labelled references and one edge per link."
-  (let ((nodes (list (list first first-label)))
-        (arrows nil) (segment-labels nil)
-        chain-label attrs routing)
-    (while (progn (excali-dsl--skip) (looking-at excali-dsl--arrow-regexp))
-      (push (match-string-no-properties 0) arrows)
-      (goto-char (match-end 0))
-      (excali-dsl--skip)
-      (let* ((id (excali-dsl--read-id "a node after the arrow"))
-             (label (progn (excali-dsl--skip-blank) (excali-dsl--read-bracket-label))))
-        (push (list id label) nodes)
-        ;; `a -> b "label"' labels this link.
-        (excali-dsl--skip-blank)
-        (push (excali-dsl--read-string) segment-labels)))
-    (setq nodes (nreverse nodes) arrows (nreverse arrows)
-          segment-labels (nreverse segment-labels))
-    (excali-dsl--skip-blank)
-    (cond ((eq (char-after) ?:) (forward-char) (setq chain-label (excali-dsl--read-edge-label)))
-          ((and (eq (char-after) ?{) (excali-dsl--brace-label-p))
-           (forward-char)
-           (setq chain-label (string-trim (buffer-substring-no-properties
-                                           (point) (1- (search-forward "}")))))))
-    (when (save-excursion (excali-dsl--skip-blank) (eq (char-after) ?{))
-      (excali-dsl--skip-blank)
-      (setq attrs (excali-dsl--read-block)))
-    (excali-dsl--skip-blank)
-    (when (looking-at "@\\(straight\\|orthogonal\\|curved\\|auto\\)")
-      (setq routing (match-string-no-properties 1))
-      (goto-char (match-end 0)))
-    (append
-     (delq nil (mapcar (lambda (n) (when (nth 1 n)
-                                     (list 'node :id (car n) :label (nth 1 n) :line line
-                                           :reference t)))
-                       nodes))
-     (cl-loop for (a b) on nodes while b
-              for arrow in arrows for seg in segment-labels
-              collect (list 'edge :from (car a) :to (car b) :arrow arrow
-                            :label (or seg chain-label)
-                            :attrs (if routing (cons (cons "routing" routing) attrs) attrs)
-                            :line line)))))
-
-(defun excali-dsl--connection-edges (body line)
-  "Return edges for a `connection' or `connections' BODY at LINE."
-  (let* ((from (cdr (assoc "from" body)))
-         (to (cdr (assoc "to" body)))
-         (style (cdr (assoc "style" body)))
-         (targets (if (vectorp to) (append to nil) (list to))))
-    (unless (and from to) (excali-dsl--error "A connection needs `from' and `to'"))
-    (mapcar (lambda (target)
-              (list 'edge :from (format "%s" from) :to (format "%s" target)
-                    :arrow (pcase (cdr (assoc "type" style))
-                             ("line" "--") (_ "->"))
-                    :label (cdr (assoc "label" style))
-                    :attrs (append
-                            (pcase (cdr (assoc "type" style))
-                              ((and s (or "dashed" "dotted")) (list (cons "strokeStyle" s))))
-                            (seq-remove (lambda (a) (member (car a) '("type" "label"))) style))
-                    :line line))
-            targets)))
-
-;;;; Templates
-
-(defun excali-dsl--slug (text)
-  "Return an id made of TEXT."
-  (let ((s (downcase (replace-regexp-in-string "[^[:alnum:]]+" "_" (string-trim text)))))
-    (if (string-empty-p s) "item" s)))
-
-(defun excali-dsl--instantiate-yaml (definition instance params line)
-  "Expand the front matter template DEFINITION as INSTANCE with PARAMS.
-Its nodes become INSTANCE.KEY, labelled with `$name' (and any other
-`$param') substituted; its `edges' link them."
-  (let ((subst (lambda (text)
-                 (let ((text (format "%s" text)))
-                   (dolist (p params text)
-                     (setq text (string-replace (concat "$" (car p)) (format "%s" (cdr p)) text))))))
-        nodes edges)
-    (dolist (entry definition)
-      (if (equal (car entry) "edges")
-          (seq-doseq (spec (cdr entry))
-            (if (string-match "\\`[ \t]*\\([[:alnum:]_.]+\\)[ \t]*\\(<->\\|->\\|---\\|--\\|~>\\)[ \t]*\\([[:alnum:]_.]+\\)" spec)
-                (push (list 'edge :from (concat instance "." (match-string 1 spec))
-                            :to (concat instance "." (match-string 3 spec))
-                            :arrow (match-string 2 spec) :line line)
-                      edges)
-              (signal 'excali-dsl-error (list line (format "Bad template edge `%s'" spec)))))
-        (push (list 'node :id (concat instance "." (car entry))
-                    :label (funcall subst (cdr entry)) :line line)
-              nodes)))
-    (append (nreverse nodes) (nreverse edges))))
-
-(defun excali-dsl--diagram (title body line)
-  "Expand `diagram TITLE { template: NAME }' (BODY) at LINE.
-A layer template draws each layer as a container of its components,
-linked by the template's connection pattern."
-  (let* ((name (cdr (assoc "template" body)))
-         (template (and name (assoc name excali-dsl--templates))))
-    (unless template
-      (signal 'excali-dsl-error (list line (if name (format "Unknown template `%s'" name)
-                                             "A diagram needs `template:'"))))
-    (unless (eq (cadr template) 'layers)
-      (signal 'excali-dsl-error (list line (format "Template `%s' has no layers" name))))
-    (let* ((definition (cddr template))
-           (layers (cdr (assoc "layers" definition)))
-           (pattern (cdr (assoc "pattern" (cdr (assoc "connections" definition)))))
-           (layout (cdr (assoc "layout" definition)))
-           (used (make-hash-table :test #'equal))
-           (unique (lambda (text)
-                     (let* ((base (excali-dsl--slug text)) (id base) (n 1))
-                       (while (gethash id used) (setq id (format "%s_%d" base (cl-incf n))))
-                       (puthash id t used)
-                       id)))
-           (layer-ids nil) (statements nil))
-      (dolist (layer layers)
-        (let* ((components (append (cdr (assoc "components" (cdr layer))) nil))
-               (arrangement (cdr (assoc "layout" (cdr layer))))
-               (ids (mapcar (lambda (c) (cons (funcall unique c) c)) components)))
-          (push (mapcar #'car ids) layer-ids)
-          (push (list 'container :id (funcall unique (car layer)) :label (car layer)
-                      :kind "layer"
-                      :attrs (and arrangement (list (cons "layout" arrangement)))
-                      :body (mapcar (lambda (c) (list 'node :id (car c) :label (cdr c) :line line))
-                                    ids)
-                      :line line)
-                statements)))
-      (setq layer-ids (nreverse layer-ids))
-      (let ((edge (lambda (a b arrow) (list 'edge :from a :to b :arrow arrow :line line)))
-            edges)
-        (pcase pattern
-          ("each-to-next-layer"
-           (cl-loop for (upper lower) on layer-ids while lower
-                    do (dolist (a upper) (dolist (b lower) (push (funcall edge a b "->") edges)))))
-          ("mesh"
-           (let ((all (apply #'append layer-ids)))
-             (cl-loop for (a . rest) on all
-                      do (dolist (b rest) (push (funcall edge a b "--") edges)))))
-          ((and (pred stringp)
-                (guard (string-match "\\`star([ \t]*\"?\\([^\")]+\\)" pattern)))
-           (let* ((hub (match-string 1 pattern))
-                  (all (apply #'append layer-ids))
-                  (hub-id (or (seq-find (lambda (id) (equal id (excali-dsl--slug hub))) all)
-                              (signal 'excali-dsl-error
-                                      (list line (format "No component `%s' for star()" hub))))))
-             (dolist (b all) (unless (equal b hub-id) (push (funcall edge hub-id b "->") edges)))))
-          ((or "custom" 'nil) nil)
-          (_ (signal 'excali-dsl-error (list line (format "Unknown connection pattern `%s'" pattern)))))
-        (append (list (list 'title :text title :line line))
-                (and layout (list (list 'layout :body layout :line line)))
-                (nreverse statements)
-                (nreverse edges))))))
-
-;;;; Parsing
-
-(defun excali-dsl-parse (string)
-  "Parse diagram DSL STRING and return (CONFIG . STATEMENTS).
-CONFIG is the front matter as an alist with string keys.  Signal
-`excali-dsl-error', with a line number and a message, on bad input."
-  (with-temp-buffer
-    (insert string)
-    (goto-char (point-min))
-    (let (config (excali-dsl--templates nil))
-      (skip-chars-forward " \t\r\n")
-      (when (looking-at "---[ \t]*$")
-        (let ((start (line-beginning-position 2)) (opening (point)))
-          (forward-line 1)
-          (unless (re-search-forward "^---[ \t]*$" nil t)
-            (goto-char opening)
-            (excali-dsl--error "Front matter has no closing `---'"))
-          (setq config (excali-dsl--parse-yaml
-                        (buffer-substring-no-properties start (match-beginning 0))))))
-      (dolist (entry (cdr (assoc "templates" config)))
-        (push (cons (car entry) (cons 'yaml (cdr entry))) excali-dsl--templates))
-      (cons config (excali-dsl--parse-statements)))))
 
 ;;;; The model
 
@@ -622,148 +53,6 @@ CONFIG is the front matter as an alist with string keys.  Signal
 
 (cl-defstruct (excali-dsl--edge (:constructor excali-dsl--make-edge))
   from to arrow label attrs parent line waypoints)
-
-(defun excali-dsl--config (config key &rest aliases)
-  "Return KEY (or one of ALIASES) from front matter CONFIG or its layout_options."
-  (let ((options (cdr (assoc "layout_options" config))))
-    (cl-loop for k in (cons key aliases)
-             for v = (or (cdr (assoc k config)) (cdr (assoc k options)))
-             when v return v)))
-
-(defun excali-dsl--direction (value)
-  "Return the layout direction TB, BT, LR or RL named by VALUE, or nil."
-  (pcase (and value (downcase (format "%s" value)))
-    ((or "tb" "td" "down" "vertical" "top-to-bottom") "TB")
-    ((or "bt" "up" "bottom-to-top") "BT")
-    ((or "lr" "right" "horizontal" "left-to-right") "LR")
-    ((or "rl" "left" "right-to-left") "RL")))
-
-(defun excali-dsl--build (parsed)
-  "Build the diagram model of PARSED, from `excali-dsl-parse'.
-Return a plist :config :root :nodes :clusters :edges :types :title."
-  (let* ((config (car parsed))
-         (nodes (make-hash-table :test #'equal))
-         (clusters (make-hash-table :test #'equal))
-         (types (make-hash-table :test #'equal))
-         (root (excali-dsl--make-cluster :id nil :kind "root"))
-         (edges nil) (title nil) (counter 0)
-         (layout nil))
-    ;; Component types from the front matter.
-    (dolist (entry (cdr (assoc "component_types" config)))
-      (puthash (car entry) (cdr entry) types))
-    (cl-labels
-        ((add-child (cluster item)
-           (unless (memq item (excali-dsl--cluster-children cluster))
-             (setf (excali-dsl--cluster-children cluster)
-                   (append (excali-dsl--cluster-children cluster) (list item)))))
-         (remove-child (cluster item)
-           (setf (excali-dsl--cluster-children cluster)
-                 (delq item (excali-dsl--cluster-children cluster))))
-         (walk (statements cluster)
-           (dolist (s statements)
-             (pcase (car s)
-               ('node
-                (let* ((id (plist-get (cdr s) :id))
-                       (node (gethash id nodes)))
-                  (if node
-                      (progn
-                        (when (plist-get (cdr s) :label)
-                          (setf (excali-dsl--node-label node) (plist-get (cdr s) :label)))
-                        (when (plist-get (cdr s) :type)
-                          (setf (excali-dsl--node-type node) (plist-get (cdr s) :type)))
-                        (setf (excali-dsl--node-attrs node)
-                              (append (excali-dsl--node-attrs node) (plist-get (cdr s) :attrs)))
-                        ;; A definition, not a mere reference, places it.
-                        (unless (plist-get (cdr s) :reference)
-                          (remove-child (excali-dsl--node-parent node) node)
-                          (setf (excali-dsl--node-parent node) cluster)
-                          (add-child cluster node)))
-                    (setq node (excali-dsl--make-node
-                                :id id :label (plist-get (cdr s) :label)
-                                :type (plist-get (cdr s) :type)
-                                :attrs (plist-get (cdr s) :attrs)
-                                :parent cluster :line (plist-get (cdr s) :line)))
-                    (puthash id node nodes)
-                    (add-child cluster node))))
-               ('edge
-                (push (excali-dsl--make-edge
-                       :from (plist-get (cdr s) :from) :to (plist-get (cdr s) :to)
-                       :arrow (plist-get (cdr s) :arrow) :label (plist-get (cdr s) :label)
-                       :attrs (plist-get (cdr s) :attrs) :parent cluster
-                       :line (plist-get (cdr s) :line))
-                      edges))
-               ((or 'container 'group)
-                (let* ((id (or (plist-get (cdr s) :id)
-                               (format "%s_%d" (car s) (cl-incf counter))))
-                       (child (excali-dsl--make-cluster
-                               :id id :label (plist-get (cdr s) :label)
-                               :kind (if (eq (car s) 'container) "container"
-                                       (plist-get (cdr s) :kind))
-                               :attrs (plist-get (cdr s) :attrs) :parent cluster
-                               :line (plist-get (cdr s) :line))))
-                  (when (gethash id clusters)
-                    (signal 'excali-dsl-error
-                            (list (plist-get (cdr s) :line) (format "Duplicate container `%s'" id))))
-                  (puthash id child clusters)
-                  (add-child cluster child)
-                  (walk (plist-get (cdr s) :body) child)))
-               ('component-type
-                (let* ((body (plist-get (cdr s) :body))
-                       (style (cdr (assoc "style" body)))
-                       (shape (cdr (assoc "shape" body))))
-                  (puthash (plist-get (cdr s) :name)
-                           (append (and shape (list (cons "shape" shape)))
-                                   (seq-remove (lambda (e) (member (car e) '("shape" "style"))) body)
-                                   style)
-                           types)))
-               ('layout (setq layout (append layout (plist-get (cdr s) :body))))
-               ('title (setq title (plist-get (cdr s) :text)))))))
-      (walk (cdr parsed) root)
-      (setq edges (nreverse edges))
-      ;; Resolve edge ends; unknown ids become nodes where first used.
-      (dolist (edge edges)
-        (dolist (end '(from to))
-          (let ((id (if (eq end 'from) (excali-dsl--edge-from edge) (excali-dsl--edge-to edge))))
-            (unless (or (gethash id nodes) (gethash id clusters))
-              (let ((resolved (excali-dsl--resolve id nodes clusters)))
-                (if resolved
-                    (if (eq end 'from) (setf (excali-dsl--edge-from edge) resolved)
-                      (setf (excali-dsl--edge-to edge) resolved))
-                  (let ((node (excali-dsl--make-node :id id :parent (excali-dsl--edge-parent edge)
-                                                     :line (excali-dsl--edge-line edge))))
-                    (puthash id node nodes)
-                    (add-child (excali-dsl--edge-parent edge) node)))))))))
-    ;; Component types.
-    (maphash (lambda (_ node)
-               (let ((type (or (excali-dsl--node-type node)
-                               (cdr (assoc "type" (excali-dsl--node-attrs node))))))
-                 (when type
-                   (let ((style (gethash (format "%s" type) types :missing)))
-                     (when (eq style :missing)
-                       (signal 'excali-dsl-error
-                               (list (excali-dsl--node-line node)
-                                     (format "Unknown component type `%s'" type))))
-                     (setf (excali-dsl--node-attrs node)
-                           (append (excali-dsl--node-attrs node) style))))))
-             nodes)
-    (list :config config :root root :nodes nodes :clusters clusters
-          :edges edges :types types :title title :layout layout)))
-
-(defun excali-dsl--resolve (id nodes clusters)
-  "Return the node or cluster id qualified reference ID stands for, or nil.
-`backend.api' finds `api' in container `backend', or a unique `api'."
-  (when (string-match-p "\\." id)
-    (let* ((parts (split-string id "\\."))
-           (last (car (last parts)))
-           (node (gethash last nodes)))
-      (cond ((and node
-                  (let ((parent (excali-dsl--node-parent node)))
-                    (or (null (butlast parts))
-                        (and parent (equal (excali-dsl--cluster-id parent)
-                                           (car (last parts 2)))))))
-             last)
-            (node last)
-            ((gethash last clusters) last)))))
 
 ;;;; Styles
 
@@ -805,17 +94,9 @@ Return a plist :config :root :nodes :clusters :edges :types :title."
     ("triangle" "triangle") ("diamond" "diamond") ("bar" "bar") ("arrow" "arrow")
     (name name)))
 
-(defun excali-dsl--defaults (config)
-  "Return the default style from front matter CONFIG as a plist."
-  (let ((sketchiness (excali-dsl--config config "sketchiness" "roughness")))
-    (list :roughness (if (numberp sketchiness) (min 2 (max 0 (round sketchiness))) 1)
-          :stroke-width (let ((w (excali-dsl--config config "stroke_width" "strokeWidth")))
-                          (if (numberp w) w 2))
-          :font (excali-dsl--font (excali-dsl--config config "font") excali-default-font-family)
-          :font-size (let ((s (excali-dsl--config config "fontSize" "font_size")))
-                       (if (numberp s) s excali-default-font-size))
-          :routing (format "%s" (or (excali-dsl--config config "routing" "edge_routing" "edges")
-                                    "straight")))))
+(defun excali-dsl--defaults (_config)
+  "Return stable language defaults, independent of interactive preferences."
+  '(:roughness 1 :stroke-width 2 :font 5 :font-size 20 :routing "straight"))
 
 (defun excali-dsl--shape (node)
   "Return the element type NODE is drawn as."
@@ -851,20 +132,6 @@ Return a plist :config :root :nodes :clusters :edges :types :title."
               (float (if (numberp h) (max h fit-h)
                        (max 60 (excali--container-dimension-for-text (+ (cdr measured) 20) shape)))))))))
 
-;;;; Layout
-
-(defconst excali-dsl--cluster-padding 30 "Space inside a container around its content.")
-(defconst excali-dsl--cluster-label-size 16 "Font size of container labels.")
-
-(defun excali-dsl--child-of (cluster item)
-  "Return the child of CLUSTER that holds ITEM (a node or cluster), or nil."
-  (let ((x item))
-    (while (and x (not (eq (if (excali-dsl--node-p x) (excali-dsl--node-parent x)
-                             (excali-dsl--cluster-parent x))
-                           cluster)))
-      (setq x (if (excali-dsl--node-p x) (excali-dsl--node-parent x) (excali-dsl--cluster-parent x))))
-    x))
-
 (defun excali-dsl--item (id model)
   "Return the node or cluster ID names in MODEL."
   (or (gethash id (plist-get model :nodes)) (gethash id (plist-get model :clusters))))
@@ -881,153 +148,210 @@ Return a plist :config :root :nodes :clusters :edges :types :title."
       (setf (excali-dsl--node-x item) x (excali-dsl--node-y item) y)
     (setf (excali-dsl--cluster-x item) x (excali-dsl--cluster-y item) y)))
 
-(defun excali-dsl--rank-spacing (edges direction options)
-  "Return the layer spacing leaving room for the labels of EDGES.
-DIRECTION says whether labels lie across (TB, BT) or along (LR, RL) the
-gap; OPTIONS holds the configured spacing and font."
-  (let ((font (plist-get options :font)) (extent 0))
-    (dolist (edge edges)
-      (when-let* ((label (excali-dsl--edge-label edge))
-                  ((not (string-empty-p label))))
-        (let ((size (excali--measure-string label 16 font (excali--line-height font))))
-          (setq extent (max extent (if (member direction '("LR" "RL")) (car size) (cdr size)))))))
-    (max (plist-get options :rank-spacing) (if (> extent 0) (+ extent 60) 0))))
 
-(defun excali-dsl--layout-cluster (cluster model options)
-  "Lay out CLUSTER's children and size CLUSTER; OPTIONS is a plist.
-Child clusters are laid out first and then placed as single boxes, so
-clusters never overlap and always hold their members.  Child positions
-are relative to CLUSTER's content origin."
-  (dolist (child (excali-dsl--cluster-children cluster))
-    (unless (excali-dsl--node-p child)
-      (excali-dsl--layout-cluster child model options)))
-  (let* ((children (vconcat (excali-dsl--cluster-children cluster)))
-         (index (let ((h (make-hash-table :test #'eq)))
-                  (dotimes (i (length children)) (puthash (aref children i) i h))
-                  h))
-         (sizes (vconcat (mapcar #'excali-dsl--item-size children)))
-         (links nil) (link-edges nil)
-         (attrs (excali-dsl--cluster-attrs cluster))
-         (direction (or (excali-dsl--direction (excali-dsl--attr attrs "direction"))
-                        (plist-get options :direction)))
-         (arrangement (excali-dsl--attr attrs "layout")))
-    (dolist (edge (plist-get model :edges))
-      (let* ((a (excali-dsl--child-of cluster (excali-dsl--item (excali-dsl--edge-from edge) model)))
-             (b (excali-dsl--child-of cluster (excali-dsl--item (excali-dsl--edge-to edge) model))))
-        (when (and a b (not (eq a b)))
-          (push (cons (gethash a index) (gethash b index)) links)
-          (push edge link-edges))))
-    (setq links (nreverse links) link-edges (nreverse link-edges))
-    (let ((positions
-           (cond
-            ((= (length children) 0) [])
-            ((and arrangement (null links)
-                  (string-match "\\`\\(horizontal\\|vertical\\|grid(\\([0-9]+\\))\\)\\'"
-                                (format "%s" arrangement)))
-             (excali-dsl-layout-grid
-              sizes
-              (pcase (match-string 1 (format "%s" arrangement))
-                ("horizontal" (length children))
-                ("vertical" 1)
-                (_ (string-to-number (match-string 2 (format "%s" arrangement)))))
-              (plist-get options :node-spacing)))
-            (t
-             (let ((result (excali-dsl-layout-graph
-                            sizes links :direction direction
-                            :node-spacing (plist-get options :node-spacing)
-                            :rank-spacing (excali-dsl--rank-spacing link-edges direction options))))
-               ;; Long links between direct child nodes bend around the
-               ;; layers they cross.
-               (cl-mapc (lambda (edge waypoints)
-                          (when (and waypoints
-                                     (excali-dsl--node-p (excali-dsl--item (excali-dsl--edge-from edge) model))
-                                     (excali-dsl--node-p (excali-dsl--item (excali-dsl--edge-to edge) model))
-                                     (eq (excali-dsl--child-of cluster (excali-dsl--item (excali-dsl--edge-from edge) model))
-                                         (excali-dsl--item (excali-dsl--edge-from edge) model))
-                                     (eq (excali-dsl--child-of cluster (excali-dsl--item (excali-dsl--edge-to edge) model))
-                                         (excali-dsl--item (excali-dsl--edge-to edge) model)))
-                            (setf (excali-dsl--edge-waypoints edge) (cons cluster waypoints))))
-                        link-edges (cdr result))
-               (car result)))))
-          (max-x 0.0) (max-y 0.0))
-      (dotimes (i (length children))
-        (let ((p (aref positions i)) (s (aref sizes i)))
-          (excali-dsl--set-item-position (aref children i) (car p) (cdr p))
-          (setq max-x (max max-x (+ (car p) (car s)))
-                max-y (max max-y (+ (cdr p) (cdr s))))))
-      (if (null (excali-dsl--cluster-parent cluster))
-          (setf (excali-dsl--cluster-w cluster) max-x (excali-dsl--cluster-h cluster) max-y)
-        (let* ((pad (let ((p (excali-dsl--attr attrs "padding")))
-                      (if (numberp p) p excali-dsl--cluster-padding)))
-               (header (if (excali-dsl--cluster-label cluster)
-                           (+ (cdr (excali--measure-string
-                                    (excali-dsl--cluster-label cluster) excali-dsl--cluster-label-size
-                                    (plist-get options :font)
-                                    (excali--line-height (plist-get options :font))))
-                              10)
-                         0))
-               (label-w (if (excali-dsl--cluster-label cluster)
-                            (car (excali--measure-string
-                                  (excali-dsl--cluster-label cluster) excali-dsl--cluster-label-size
-                                  (plist-get options :font)
-                                  (excali--line-height (plist-get options :font))))
-                          0)))
-          (setf (excali-dsl--cluster-w cluster) (max (+ max-x (* 2 pad)) (+ label-w (* 2 pad)))
-                (excali-dsl--cluster-h cluster) (+ max-y (* 2 pad) header))
-          ;; Where the content starts, inside the box.
-          (setf (excali-dsl--cluster-attrs cluster)
-                (append (list (cons :content (cons pad (+ pad header)))) attrs)))))))
+;;;; Model and relative layout
 
-(defun excali-dsl--absolute (cluster x y)
-  "Turn positions under CLUSTER, whose content starts at X, Y, absolute."
-  (dolist (child (excali-dsl--cluster-children cluster))
-    (if (excali-dsl--node-p child)
-        (setf (excali-dsl--node-x child) (+ x (excali-dsl--node-x child))
-              (excali-dsl--node-y child) (+ y (excali-dsl--node-y child)))
-      (let ((cx (+ x (excali-dsl--cluster-x child))) (cy (+ y (excali-dsl--cluster-y child)))
-            (content (cdr (assq :content (excali-dsl--cluster-attrs child)))))
-        (setf (excali-dsl--cluster-x child) cx (excali-dsl--cluster-y child) cy)
-        (excali-dsl--absolute child (+ cx (car content)) (+ cy (cdr content)))))))
+(defconst excali-dsl--cluster-padding 30 "Container content padding.")
+(defconst excali-dsl--cluster-label-size 20 "Default container label size.")
+(defconst excali-dsl--gap 80 "Minimum gap in a directional placement.")
 
-(defun excali-dsl--layout-options (model)
-  "Return the layout options of MODEL: direction, spacing and font."
-  (let* ((config (plist-get model :config))
-         (layout (plist-get model :layout))
-         (spacing (cdr (assoc "spacing" layout))))
-    (list :direction (or (excali-dsl--direction (cdr (assoc "direction" layout)))
-                         (excali-dsl--direction
-                          (excali-dsl--config config "direction" "rankdir" "rank_dir"))
-                         "TB")
-          :node-spacing (or (cdr (assoc "node_spacing" spacing))
-                            (excali-dsl--config config "nodeSpacing" "nodesep" "node_spacing")
-                            60)
-          :rank-spacing (or (cdr (assoc "layer_spacing" spacing))
-                            (excali-dsl--config config "rankSpacing" "ranksep" "rank_spacing")
-                            90)
-          :font (plist-get (excali-dsl--defaults config) :font))))
+(defun excali-dsl--build (statements)
+  "Validate STATEMENTS and build the native drawing model."
+  (let ((styles (make-hash-table :test #'equal))
+        (defaults (make-hash-table :test #'equal))
+        (declarations (make-hash-table :test #'equal))
+        (nodes (make-hash-table :test #'equal))
+        (clusters (make-hash-table :test #'equal))
+        (root (excali-dsl--make-cluster :kind "root"))
+        (pairs (make-hash-table :test #'equal)) edges ordered)
+    (dolist (s statements)
+      (let ((kind (plist-get s :kind)) (id (plist-get s :id))
+            (tok (plist-get s :token)) (props (plist-get s :props)))
+        (pcase kind
+          ((or "style" "default")
+           (when (and (equal kind "style") (string-match-p "\\." id))
+             (excali-dsl--fail tok "Style names must have one segment"))
+           (when (and (equal kind "default") (not (member id '("node" "edge"))))
+             (excali-dsl--fail tok "Default must target node or edge"))
+           (let ((table (if (equal kind "style") styles defaults)))
+             (when (gethash id table) (excali-dsl--fail tok "Duplicate %s %s" kind id))
+             (excali-dsl--validate-props props (if (equal kind "style") 'both (intern id)))
+             (puthash id s table)))
+          ("node"
+           (when (gethash id declarations) (excali-dsl--fail tok "Duplicate node %s" id))
+           (when (string-match "\\`\\(.*\\)\\.[^.]+\\'" id)
+             (unless (gethash (match-string 1 id) declarations)
+               (excali-dsl--fail tok "Declare parent %s before its child" (match-string 1 id))))
+           (puthash id s declarations) (push s ordered)))))
+    (setq ordered (nreverse ordered))
+    (cl-labels
+        ((attributes (s)
+           (let* ((kind (intern (plist-get s :kind))) (own (plist-get s :props))
+                  (ref (assoc "style" own)) (named (and ref (gethash (cadr ref) styles)))
+                  (base (plist-get (gethash (symbol-name kind) defaults) :props)))
+             (when (and ref (not named))
+               (excali-dsl--fail (nth 2 ref) "Unknown style %s" (cadr ref)))
+             (excali-dsl--validate-props own kind t)
+             (excali-dsl--validate-props (plist-get named :props) kind)
+             ;; Earlier entries win: inline > named > document defaults.
+             (append (excali-dsl--native-props own)
+                     (excali-dsl--native-props (plist-get named :props))
+                     (excali-dsl--native-props base)
+                     '(("strokeColor" . "#1e1e1e") ("backgroundColor" . "transparent")
+                       ("strokeWidth" . 2) ("opacity" . 100) ("font" . 5)
+                       ("fontSize" . 20) ("textColor" . "#1e1e1e")))))
+         (reference (token)
+           (unless (gethash (cadr token) declarations)
+             (excali-dsl--fail token "Unknown node %s" (cadr token)))))
+      ;; Discover containers before constructing items, preserving source order.
+      (dolist (s ordered)
+        (let ((id (plist-get s :id)))
+          (when (string-match "\\`\\(.*\\)\\.[^.]+\\'" id)
+            (puthash (match-string 1 id) t clusters))))
+      (dolist (s ordered)
+        (let* ((id (plist-get s :id))
+               (parent (if (string-match "\\`\\(.*\\)\\.[^.]+\\'" id)
+                           (gethash (match-string 1 id) clusters) root))
+               (attrs (attributes s))
+               (label (if (plist-member s :label) (plist-get s :label) (car (last (split-string id "\\.")))))
+               (container (gethash id clusters))
+               (shape (or (cdr (assoc "shape" attrs)) "rectangle"))
+               (item (if container
+                         (excali-dsl--make-cluster :id id :label label :kind "container"
+                                                  :parent parent :attrs attrs :line (plist-get s :line))
+                       (excali-dsl--make-node :id id :label label :attrs attrs
+                                             :parent parent :line (plist-get s :line)))))
+          (when (and container (not (equal shape "rectangle")))
+            (excali-dsl--fail (plist-get s :token) "Container %s must be rectangular" id))
+          (when (and (equal shape "ellipse") (assoc "roundness" attrs))
+            (excali-dsl--fail (plist-get s :token) "roundness is not valid on an ellipse"))
+          (dolist (p (plist-get s :placements)) (reference (nth 1 p)))
+          (puthash id item (if container clusters nodes))
+          (setf (excali-dsl--cluster-children parent)
+                (append (excali-dsl--cluster-children parent) (list item)))))
+      (dolist (s statements)
+        (when (equal (plist-get s :kind) "edge")
+          (let* ((from (plist-get s :id)) (target (plist-get s :target))
+                 (to (cadr target)) (tok (plist-get s :token)) (pair (cons from to)))
+            (reference (list 'word from (nth 2 tok) (nth 3 tok))) (reference target)
+            (when (equal from to) (excali-dsl--fail tok "Self-loop edges are not supported"))
+            (when (gethash pair pairs) (excali-dsl--fail tok "Duplicate edge %s -> %s" from to))
+            (puthash pair t pairs)
+            (push (excali-dsl--make-edge
+                   :from from :to to :arrow "->" :label (plist-get s :label)
+                   :line (plist-get s :line) :parent root
+                   :attrs (append (plist-get s :sides) (attributes s))) edges)))))
+    (list :root root :nodes nodes :clusters clusters :edges (nreverse edges)
+          :statements ordered)))
 
 (defun excali-dsl--layout (model)
-  "Size and place every node and cluster of MODEL, in scene coordinates."
-  (let ((defaults (excali-dsl--defaults (plist-get model :config)))
-        (options (excali-dsl--layout-options model)))
-    (maphash (lambda (_ node)
-               (pcase-let ((`(,w . ,h) (excali-dsl--node-size node defaults)))
-                 (setf (excali-dsl--node-w node) w (excali-dsl--node-h node) h)))
-             (plist-get model :nodes))
-    (let ((root (plist-get model :root)))
-      (excali-dsl--layout-cluster root model options)
-      (excali-dsl--absolute root 0.0 0.0)
-      ;; Manual layout: nodes with x and y keep them.
-      (when (equal (format "%s" (excali-dsl--config (plist-get model :config) "layout")) "manual")
-        (maphash (lambda (_ node)
-                   (let ((x (excali-dsl--attr (excali-dsl--node-attrs node) "x"))
-                         (y (excali-dsl--attr (excali-dsl--node-attrs node) "y")))
-                     (when (and (numberp x) (numberp y))
-                       (setf (excali-dsl--node-x node) (float x) (excali-dsl--node-y node) (float y)))))
-                 (plist-get model :nodes))))
-    model))
-
-;;;; Drawing
+  "Jointly solve relative positions and container sizes in MODEL."
+  (let* ((statements (plist-get model :statements)) (count (length statements))
+         (n (* 4 count)) (indices (make-hash-table :test #'equal))
+         (links (make-hash-table :test #'equal)) (previous (make-hash-table :test #'equal))
+         (objective (make-vector n -1.0))
+         (clearances (make-hash-table :test #'equal)) constraints)
+    (cl-loop for s in statements for i from 0 do (puthash (plist-get s :id) (* i 4) indices))
+    (dolist (edge (plist-get model :edges))
+      (when-let* ((label (excali-dsl--edge-label edge)))
+        (let* ((attrs (excali-dsl--edge-attrs edge))
+               (font (cdr (assoc "font" attrs)))
+               (size (excali--measure-string (excali--normalize-text label) (cdr (assoc "fontSize" attrs)) font
+                                            (excali--line-height font)))
+               (a (gethash (excali-dsl--edge-from edge) indices))
+               (b (gethash (excali-dsl--edge-to edge) indices)))
+          (puthash (cons a b) size clearances)
+          (puthash (cons b a) size clearances))))
+    (cl-labels
+        ((link (a b) (push b (gethash a links)) (push a (gethash b links)))
+         (bound (terms rhs)
+           (let ((v (make-vector n 0.0)))
+             (dolist (term terms) (cl-incf (aref v (car term)) (cdr term)))
+             (push (cons v rhs) constraints)))
+         (eqn (terms rhs)
+           (bound terms rhs)
+           (bound (mapcar (lambda (p) (cons (car p) (- (cdr p)))) terms) (- rhs)))
+         (align (a b axis)
+           (let ((offset (if (eq axis 'x) 0 2)))
+             (eqn (list (cons (+ a offset) 1) (cons (+ a offset 1) 1)
+                        (cons (+ b offset) -1) (cons (+ b offset 1) -1)) 0)))
+         (place (a b op)
+           (let* ((label (gethash (cons a b) clearances))
+                  (gap (max excali-dsl--gap
+                            (+ 24 (or (if (member op '("left" "right")) (car label) (cdr label)) 0)))))
+             (pcase op
+               ("right" (bound (list (cons (+ b 1) 1) (cons a -1)) (- gap)))
+               ("left" (bound (list (cons (+ a 1) 1) (cons b -1)) (- gap)))
+               ("below" (bound (list (cons (+ b 3) 1) (cons (+ a 2) -1)) (- gap)))
+               ("above" (bound (list (cons (+ a 3) 1) (cons (+ b 2) -1)) (- gap)))
+               ("level" (align a b 'y))))))
+      (dolist (s statements)
+        (let* ((id (plist-get s :id)) (a (gethash id indices)) (item (excali-dsl--item id model))
+               (leaf (excali-dsl--node-p item))
+               (parent (if leaf (excali-dsl--node-parent item) (excali-dsl--cluster-parent item)))
+               (pid (excali-dsl--cluster-id parent))
+               (p (and pid (gethash pid indices)))
+               (placements (plist-get s :placements))
+               (size (if leaf (excali-dsl--node-size item (excali-dsl--defaults nil))
+                       (let* ((attrs (excali-dsl--cluster-attrs item))
+                              (font (cdr (assoc "font" attrs))) (fs (cdr (assoc "fontSize" attrs)))
+                              (extent (excali--measure-string (excali--normalize-text (excali-dsl--cluster-label item)) fs font
+                                                              (excali--line-height font))))
+                         (cons (+ 60 (car extent)) (+ 60 (cdr extent)))))))
+          ;; Leaves have fixed text-derived sizes.  Containers grow as needed.
+          (funcall (if leaf #'eqn #'bound) (list (cons a 1) (cons (1+ a) -1)) (- (car size)))
+          (funcall (if leaf #'eqn #'bound) (list (cons (+ a 2) 1) (cons (+ a 3) -1)) (- (cdr size)))
+          (when p
+            (link id pid)
+            (let* ((attrs (excali-dsl--cluster-attrs parent))
+                   (fs (cdr (assoc "fontSize" attrs))) (font (cdr (assoc "font" attrs)))
+                   (height (cdr (excali--measure-string (excali--normalize-text (excali-dsl--cluster-label parent)) fs font
+                                                        (excali--line-height font)))))
+              (bound (list (cons p 1) (cons a -1)) -30)
+              (bound (list (cons (+ a 1) 1) (cons (+ p 1) -1)) -30)
+              (bound (list (cons (+ p 2) 1) (cons (+ a 2) -1)) (- (+ 45 height)))
+              (bound (list (cons (+ a 3) 1) (cons (+ p 3) -1)) -30)))
+          (when (and pid (null placements) (gethash pid previous))
+            (let* ((other (gethash pid previous)) (b (gethash other indices)))
+              (place a b "below") (align a b 'x) (link id other)))
+          (puthash pid id previous)
+          (let ((horizontal (seq-filter (lambda (q) (member (car q) '("left" "right"))) placements))
+                (vertical (seq-filter (lambda (q) (member (car q) '("above" "below" "level"))) placements)))
+            (when (or (and (> (length horizontal) 1) (null vertical))
+                      (and (> (length vertical) 1) (null horizontal)))
+              (excali-dsl--fail (plist-get s :token) "Ambiguous alignment; specify both axes"))
+            (dolist (q placements)
+              (let* ((ref (cadr (nth 1 q))) (b (gethash ref indices)))
+                (link id ref) (place a b (car q))))
+            (when (and (= (length horizontal) 1) (null vertical))
+              (align a (gethash (cadr (nth 1 (car horizontal))) indices) 'y))
+            (when (and (= (length vertical) 1) (null horizontal)
+                       (not (equal (caar vertical) "level")))
+              (align a (gethash (cadr (nth 1 (car vertical))) indices) 'x)))))
+      ;; Edges never provide layout connectivity.
+      (when statements
+        (let ((seen (make-hash-table :test #'equal)) (queue (list (plist-get (car statements) :id))))
+          (while queue
+            (let ((id (pop queue)))
+              (unless (gethash id seen)
+                (puthash id t seen) (setq queue (append (gethash id links) queue)))))
+          (dolist (s statements)
+            (unless (gethash (plist-get s :id) seen)
+              (excali-dsl--fail (plist-get s :token) "Disconnected node %s; add a placement" (plist-get s :id))))))
+      (let ((solution (excali-dsl--linear-solve (nreverse constraints) objective)))
+        (unless solution
+          (excali-dsl--fail (plist-get (car statements) :token)
+                            "Conflicting or cyclic placement/containment constraints (nodes: %s)"
+                            (mapconcat (lambda (s) (format "%s@%d" (plist-get s :id) (plist-get s :line))) statements ", ")))
+        (dolist (s statements)
+          (let* ((id (plist-get s :id)) (i (gethash id indices)) (item (excali-dsl--item id model))
+                 (x (aref solution i)) (y (aref solution (+ i 2)))
+                 (w (- (aref solution (+ i 1)) x)) (h (- (aref solution (+ i 3)) y)))
+            (excali-dsl--set-item-position item x y)
+            (if (excali-dsl--node-p item)
+                (setf (excali-dsl--node-w item) w (excali-dsl--node-h item) h)
+              (setf (excali-dsl--cluster-w item) w (excali-dsl--cluster-h item) h)))))))
+  model)
 
 (defconst excali-dsl--group-colors
   '(("group" "#6b7280" "#f3f4f6") ("flow" "#3b82f6" "#dbeafe")
@@ -1038,10 +362,12 @@ are relative to CLUSTER's content origin."
 
 (defun excali-dsl--custom-data (id)
   "Return the customData marking an element as drawn for DSL ID."
-  (list (cons 'edslId id)))
+  (list (cons 'excaliDslId id)))
 
 (defun excali-dsl--add (element)
   "Put ELEMENT on top of the scene being drawn and return it."
+  (when-let* ((id (alist-get 'excaliDslId (excali--get element 'customData))))
+    (excali--put element 'seed (1+ (mod (string-to-number (substring (secure-hash 'sha256 id) 0 8) 16) 2147483646))))
   (setq excali--elements (append excali--elements (list element)))
   element)
 
@@ -1069,7 +395,7 @@ DEFAULTS is the default style."
                                                       (if (equal kind "flow") "dashed" "solid"))))
                   (cons 'roughness (or (excali-dsl--attr attrs "roughness") (plist-get defaults :roughness)))
                   (cons 'opacity (or (excali-dsl--attr attrs "opacity") (if container 50 30)))
-                  (cons 'roundness '((type . 3)))
+                  (cons 'roundness (if (equal (excali-dsl--attr attrs "roundness") 0) :null '((type . 3))))
                   (cons 'groupIds (vector group-id))
                   (cons 'customData (excali-dsl--custom-data (excali-dsl--cluster-id cluster)))))))
       (setf (excali-dsl--cluster-element cluster) box)
@@ -1078,11 +404,16 @@ DEFAULTS is the default style."
           (setf (excali-dsl--cluster-label-element cluster)
                 (excali-dsl--add
                  (excali--make-text-element
-                  (+ (excali-dsl--cluster-x cluster) excali-dsl--cluster-padding)
+                  (+ (excali-dsl--cluster-x cluster) excali-dsl--cluster-padding
+                     (* (pcase (excali-dsl--attr attrs "textAlign") ("center" 0.5) ("right" 1.0) (_ 0.0))
+                        (car (excali--measure-string (excali--normalize-text label) (excali-dsl--attr attrs "fontSize") font
+                                                    (excali--line-height font)))))
                   (+ (excali-dsl--cluster-y cluster) (/ excali-dsl--cluster-padding 2.0))
                   label
                   (cons 'fontSize (or (excali-dsl--attr attrs "fontSize") excali-dsl--cluster-label-size))
                   (cons 'fontFamily font)
+                  (cons 'opacity (or (excali-dsl--attr attrs "opacity") 100))
+                  (cons 'textAlign (or (excali-dsl--attr attrs "textAlign") "left"))
                   (cons 'strokeColor (or (excali-dsl--color (excali-dsl--attr attrs "textColor"))
                                          (if container "#495057" (or (car colors) "#495057"))))
                   (cons 'groupIds (vector group-id)))))))))
@@ -1131,7 +462,7 @@ DEFAULTS is the default style."
                       (cons 'roughness (let ((r (excali-dsl--attr attrs "roughness")))
                                          (if (numberp r) (min 2 (max 0 r)) (plist-get defaults :roughness))))
                       (cons 'opacity (or (excali-dsl--attr attrs "opacity") 100))
-                      (cons 'roundness (if (and (numberp rounded) (<= rounded 0))
+                      (cons 'roundness (if (or (equal shape "ellipse") (and (numberp rounded) (<= rounded 0)))
                                            :null
                                          (list (cons 'type (if (equal shape "rectangle") 3 2)))))
                       (cons 'customData (excali-dsl--custom-data (excali-dsl--node-id node)))))))
@@ -1139,18 +470,12 @@ DEFAULTS is the default style."
                 (let ((text (excali--add-bound-text
                              element (cons 'fontSize size) (cons 'fontFamily font)
                              (cons 'lineHeight (excali--line-height font))
+                             (cons 'opacity (or (excali-dsl--attr attrs "opacity") 100))
+                             (cons 'textAlign (or (excali-dsl--attr attrs "textAlign") "center"))
                              (cons 'strokeColor (or text-color "#1e1e1e")))))
                   (excali--set-text text label)))
               element))))
     (setf (excali-dsl--node-element node) element)))
-
-(defun excali-dsl--content-origin (cluster)
-  "Return where CLUSTER's content starts, in scene coordinates."
-  (if (null (excali-dsl--cluster-parent cluster))
-      (cons 0.0 0.0)
-    (let ((content (cdr (assq :content (excali-dsl--cluster-attrs cluster)))))
-      (cons (+ (excali-dsl--cluster-x cluster) (car content))
-            (+ (excali-dsl--cluster-y cluster) (cdr content))))))
 
 (defun excali-dsl--element-center (element)
   "Return the center of ELEMENT's box."
@@ -1166,78 +491,15 @@ DEFAULTS is the default style."
         (cons cx (+ cy (if (> dy 0) h (- h))))
       (cons (+ cx (if (> dx 0) w (- w))) cy))))
 
-(defconst excali-dsl--detour-margin 16 "Clearance of an edge going around a shape.")
-
-(defun excali-dsl--segment-hits-box-p (p q box)
-  "Return the entry parameter if segment P-Q crosses BOX (X1 Y1 X2 Y2), else nil."
-  (let ((t0 0.0) (t1 1.0)
-        (dx (- (car q) (car p))) (dy (- (cdr q) (cdr p))))
-    (catch 'miss
-      (cl-loop for (pk qk) in (list (list (- dx) (- (car p) (nth 0 box)))
-                                    (list dx (- (nth 2 box) (car p)))
-                                    (list (- dy) (- (cdr p) (nth 1 box)))
-                                    (list dy (- (nth 3 box) (cdr p))))
-               do (if (zerop pk)
-                      (when (< qk 0) (throw 'miss nil))
-                    (let ((r (/ qk pk)))
-                      (if (< pk 0) (setq t0 (max t0 r)) (setq t1 (min t1 r))))))
-      (and (< t0 t1) t0))))
-
-(defun excali-dsl--detour (p q obstacles &optional depth)
-  "Return points from P to Q going around the OBSTACLES boxes it crosses."
-  (let* ((depth (or depth 0))
-         (hit (and (< depth 6)
-                   (car (sort (delq nil (mapcar (lambda (box)
-                                                  (when-let* ((u (excali-dsl--segment-hits-box-p p q box)))
-                                                    (cons u box)))
-                                                obstacles))
-                              (lambda (a b) (< (car a) (car b))))))))
-    (if (null hit)
-        (list p q)
-      (pcase-let* ((`(,x1 ,y1 ,x2 ,y2) (cdr hit))
-                   (m excali-dsl--detour-margin)
-                   (dx (- (car q) (car p))) (dy (- (cdr q) (cdr p)))
-                   (vertical (>= (abs dy) (abs dx)))
-                   (via
-                    (if vertical
-                        (let* ((cy (/ (+ y1 y2) 2.0))
-                               (x (+ (car p) (* dx (/ (- cy (cdr p)) (if (zerop dy) 1 dy)))))
-                               (side (if (< (- x x1) (- x2 x)) (- x1 m) (+ x2 m))))
-                          (if (> dy 0) (list (cons side (- y1 m)) (cons side (+ y2 m)))
-                            (list (cons side (+ y2 m)) (cons side (- y1 m)))))
-                      (let* ((cx (/ (+ x1 x2) 2.0))
-                             (y (+ (cdr p) (* dy (/ (- cx (car p)) (if (zerop dx) 1 dx)))))
-                             (side (if (< (- y y1) (- y2 y)) (- y1 m) (+ y2 m))))
-                        (if (> dx 0) (list (cons (- x1 m) side) (cons (+ x2 m) side))
-                          (list (cons (+ x2 m) side) (cons (- x1 m) side)))))))
-        (append (butlast (excali-dsl--detour p (car via) obstacles (1+ depth)))
-                (butlast (excali-dsl--detour (car via) (cadr via) obstacles (1+ depth)))
-                (excali-dsl--detour (cadr via) q obstacles (1+ depth)))))))
-
-(defun excali-dsl--obstacles (model a b)
-  "Return the boxes an edge between elements A and B should go around.
-Every shape but A and B, and every container holding neither."
-  (let ((inside (lambda (element cluster)
-                  (let ((box (excali-dsl--box (excali-dsl--cluster-element cluster)))
-                        (c (excali-dsl--element-center element)))
-                    (and (<= (nth 0 box) (car c) (nth 2 box)) (<= (nth 1 box) (cdr c) (nth 3 box))))))
-        boxes)
-    (maphash (lambda (_ node)
-               (let ((e (excali-dsl--node-element node)))
-                 (unless (or (eq e a) (eq e b)) (push (excali-dsl--box e) boxes))))
-             (plist-get model :nodes))
-    (maphash (lambda (_ cluster)
-               (let ((e (excali-dsl--cluster-element cluster)))
-                 (unless (or (eq e a) (eq e b)
-                             (funcall inside a cluster) (funcall inside b cluster))
-                   (push (excali-dsl--box e) boxes))))
-             (plist-get model :clusters))
-    boxes))
-
-(defun excali-dsl--box (element)
-  "Return ELEMENT's box (X1 Y1 X2 Y2)."
-  (let ((x (excali--get element 'x)) (y (excali--get element 'y)))
-    (list x y (+ x (excali--get element 'width)) (+ y (excali--get element 'height)))))
+(defun excali-dsl--port (element side toward)
+  "Return ELEMENT's SIDE midpoint, or the side facing TOWARD."
+  (let* ((center (excali-dsl--element-center element))
+         (x (excali--get element 'x)) (y (excali--get element 'y))
+         (w (excali--get element 'width)) (h (excali--get element 'height)))
+    (pcase side
+      ("top" (cons (car center) y)) ("bottom" (cons (car center) (+ y h)))
+      ("left" (cons x (cdr center))) ("right" (cons (+ x w) (cdr center)))
+      (_ (excali-dsl--side-point element toward)))))
 
 (defun excali-dsl--draw-edge (edge model defaults)
   "Draw EDGE of MODEL as an arrow bound to its ends; DEFAULTS is the style."
@@ -1257,25 +519,9 @@ Every shape but A and B, and every container holding neither."
              (curved (member routing '("curved" "round")))
              (ca (excali-dsl--element-center a))
              (cb (excali-dsl--element-center b))
-             (waypoints (and (not elbow) (excali-dsl--edge-waypoints edge)
-                             (let ((origin (excali-dsl--content-origin
-                                            (car (excali-dsl--edge-waypoints edge)))))
-                               (mapcar (lambda (p) (cons (+ (car origin) (car p))
-                                                         (+ (cdr origin) (cdr p))))
-                                       (cdr (excali-dsl--edge-waypoints edge))))))
-             (points (cond (elbow (list (excali-dsl--side-point a cb) (excali-dsl--side-point b ca)))
-                           ((not curved)
-                            ;; Straight segments, bent around what they would cross.
-                            (let ((obstacles (excali-dsl--obstacles model a b))
-                                  (route (append (list ca) waypoints (list cb))))
-                              (cons (car route)
-                                    (cl-loop for (p q) on route while q
-                                             append (cdr (excali-dsl--detour p q obstacles))))))
-                           (curved
-                            (let* ((mx (/ (+ (car ca) (car cb)) 2.0)) (my (/ (+ (cdr ca) (cdr cb)) 2.0))
-                                   (dx (- (car cb) (car ca))) (dy (- (cdr cb) (cdr ca))))
-                              (list ca (cons (- mx (* 0.15 dy)) (+ my (* 0.15 dx))) cb)))
-                           (t (list ca cb))))
+             (pa (excali-dsl--port a (excali-dsl--attr attrs "from") cb))
+             (pb (excali-dsl--port b (excali-dsl--attr attrs "to") ca))
+             (points (list pa pb))
              (origin (car points))
              (style (excali-dsl--attr attrs "strokeStyle" "style"))
              (arrow (excali-dsl--add
@@ -1298,6 +544,7 @@ Every shape but A and B, and every container holding neither."
                       (cons 'endArrowhead
                             (excali-dsl--arrowhead (excali-dsl--attr attrs "endArrowhead")
                                                    (if (member arrow-op '("--" "---")) :null "arrow")))
+                      (cons 'opacity (or (excali-dsl--attr attrs "opacity") 100))
                       (cons 'elbowed :false)
                       (cons 'customData (excali-dsl--custom-data
                                          (format "%s->%s" (excali-dsl--edge-from edge)
@@ -1309,15 +556,23 @@ Every shape but A and B, and every container holding neither."
               (excali--elbow-bind-end arrow 'start a)
               (excali--elbow-bind-end arrow 'end b)
               (excali--elbow-route-fresh arrow))
-          (excali--bind-end arrow 'start a ca)
-          (excali--bind-end arrow 'end b cb)
+          (excali--bind-end arrow 'start a pa t)
+          (excali--bind-end arrow 'end b pb t)
+          ;; Outline points are not considered "inside" by hit testing.
+          ;; Explicit ports nevertheless stay fixed to the requested side.
+          (when (excali-dsl--attr attrs "from")
+            (setcdr (assq 'mode (excali--get arrow 'startBinding)) "inside"))
+          (when (excali-dsl--attr attrs "to")
+            (setcdr (assq 'mode (excali--get arrow 'endBinding)) "inside"))
           (excali--update-arrow arrow))
         (when-let* ((label (excali-dsl--edge-label edge))
                     ((not (string-empty-p label))))
           (let* ((font (excali-dsl--font (excali-dsl--attr attrs "font") (plist-get defaults :font)))
                  (text (excali--add-bound-text
-                        arrow (cons 'fontSize (or (excali-dsl--attr attrs "fontSize") 16))
+                        arrow (cons 'fontSize (or (excali-dsl--attr attrs "fontSize") 20))
                         (cons 'fontFamily font) (cons 'lineHeight (excali--line-height font))
+                             (cons 'opacity (or (excali-dsl--attr attrs "opacity") 100))
+                             (cons 'textAlign (or (excali-dsl--attr attrs "textAlign") "center"))
                         (cons 'strokeColor (or (excali-dsl--color (excali-dsl--attr attrs "textColor"))
                                                "#1e1e1e")))))
             (excali--set-text text label)))
@@ -1348,64 +603,79 @@ Every shape but A and B, and every container holding neither."
 
 ;;;; Programs
 
+(defun excali-dsl--report-fonts (model)
+  "Report missing primary fonts used by MODEL; measurement uses Pango fallback."
+  (let ((seen (make-hash-table :test #'eql)))
+    (cl-labels ((check (attrs)
+                 (let* ((id (cdr (assoc "font" attrs)))
+                        (preferred (car (split-string (excali-native-font-family id) ",")))
+                        (resolved (excali-native-font-resolve "Hello" id)))
+                   (unless (gethash id seen)
+                     (puthash id t seen)
+                     (unless (equal preferred resolved)
+                       (message "Excali DSL: font %s uses %s (see M-x excali-font-report)" preferred resolved))))))
+      (maphash (lambda (_ n) (check (excali-dsl--node-attrs n))) (plist-get model :nodes))
+      (maphash (lambda (_ c) (check (excali-dsl--cluster-attrs c))) (plist-get model :clusters))
+      (dolist (e (plist-get model :edges)) (check (excali-dsl--edge-attrs e))))))
+
 (defun excali-dsl-model (string)
   "Parse, build and lay out diagram DSL STRING; return the model plist."
-  (excali-dsl--layout (excali-dsl--build (excali-dsl-parse string))))
+  (let ((model (excali-dsl--build (excali-dsl-parse string))))
+    (excali-dsl--report-fonts model)
+    (excali-dsl--layout model)))
 
 (defun excali-dsl-elements (string)
   "Return the Excalidraw elements diagram DSL STRING draws.
 Elements are alists as in .excalidraw files, bottom to top, with fresh
-ids; each shape and arrow records its DSL id in `customData.edslId'.
+ids; each shape and arrow records its DSL id in `customData.excalidslId'.
 Signal `excali-dsl-error' on bad input."
   (excali-dsl--draw (excali-dsl-model string)))
 
 (defun excali-dsl-scene (string)
-  "Return the .excalidraw document diagram DSL STRING draws.
-The document is restored like a loaded file (fractional indices and all),
-ready for `excali--serialize-doc'.  Front matter `theme: dark' and
-`background_color' go into its app state."
-  (let* ((parsed (excali-dsl-parse string))
-         (model (excali-dsl--layout (excali-dsl--build parsed)))
-         (config (plist-get model :config))
-         (doc (excali--empty-doc))
-         (background (excali-dsl--color (excali-dsl--config config "background_color"
-                                                            "backgroundColor"))))
-    (setf (alist-get 'elements doc) (vconcat (excali-dsl--draw model)))
-    (when background
-      (setf (alist-get 'viewBackgroundColor (alist-get 'appState doc)) background))
-    (when (equal (excali-dsl--config config "theme") "dark")
-      (setf (alist-get 'theme (alist-get 'appState doc)) "dark"))
+  "Return a restored native Excalidraw document for DSL STRING."
+  (let ((doc (excali--empty-doc)))
+    (setf (alist-get 'elements doc) (vconcat (excali-dsl-elements string)))
     (excali--restore-doc doc)))
 
 (defun excali-dsl-write (string file)
-  "Write the scene diagram DSL STRING draws to the .excalidraw FILE."
+  "Atomically write the scene for STRING to FILE.
+Parsing and rendering finish before touching the destination."
   (let* ((doc (excali-dsl-scene string))
-         (text (excali--serialize-doc doc (append (alist-get 'elements doc) nil))))
-    (with-temp-file file
-      (setq buffer-file-coding-system 'utf-8-unix)
-      (insert text))
+         (text (excali--serialize-doc doc (append (alist-get 'elements doc) nil)))
+         (destination (expand-file-name file))
+         (temp (make-temp-file (expand-file-name ".excali-dsl-" (file-name-directory destination)))))
+    (unwind-protect
+        (progn
+          (with-temp-file temp
+            (setq buffer-file-coding-system 'utf-8-unix)
+            (insert text))
+          (when (file-exists-p destination) (set-file-modes temp (file-modes destination)))
+          (rename-file temp destination t))
+      (when (file-exists-p temp) (delete-file temp)))
     file))
 
 ;;;; Commands
 
 (defvar-local excali-dsl--scene-buffer nil
-  "The excali buffer this .edsl buffer was last drawn in.")
+  "The excali buffer this .excalidsl buffer was last drawn in.")
 
 (defun excali-dsl--signal-user (err &optional name)
   "Report the `excali-dsl-error' ERR as a user error, prefixed with NAME."
   (user-error "%s%s" (if name (concat name ":") "") (excali-dsl-error-message err)))
 
 (defun excali-dsl-render ()
-  "Draw the diagram in the current .edsl buffer in an excali buffer.
+  "Draw the diagram in the current .excalidsl buffer in an excali buffer.
 Drawing again replaces the scene in the same buffer and keeps its view."
   (interactive)
+  ;; The DSL mode can be autoloaded before the canvas entry points.
+  (require 'excali)
   (let* ((source (buffer-substring-no-properties (point-min) (point-max)))
          (name (format "*excali %s*" (if buffer-file-name
                                          (file-name-nondirectory buffer-file-name)
                                        (buffer-name))))
          (doc (condition-case err (excali-dsl-scene source)
                 (excali-dsl-error (excali-dsl--signal-user err (buffer-name)))))
-         (dark (equal (excali-dsl--config (car (excali-dsl-parse source)) "theme") "dark"))
+         (dark nil)
          (scene excali-dsl--scene-buffer))
     (if (buffer-live-p scene)
         (with-current-buffer scene
@@ -1420,7 +690,10 @@ Drawing again replaces the scene in the same buffer and keeps its view."
         (let ((display-buffer-overriding-action
                '((display-buffer-reuse-window display-buffer-pop-up-window)
                  (inhibit-same-window . t))))
-          (setq scene (excali--open doc nil name)))
+          ;; Opening the canvas changes the current buffer.  Restore the DSL
+          ;; buffer before storing its buffer-local preview association.
+          (save-current-buffer
+            (setq scene (excali--open doc nil name))))
         (with-current-buffer scene
           (when dark
             (setq excali--theme 'dark)
@@ -1431,7 +704,7 @@ Drawing again replaces the scene in the same buffer and keeps its view."
     scene))
 
 (defun excali-dsl-export (file)
-  "Write the diagram in the current .edsl buffer to the .excalidraw FILE."
+  "Write the diagram in the current .excalidsl buffer to the .excalidraw FILE."
   (interactive
    (list (read-file-name "Write scene to: " nil nil nil
                          (concat (file-name-base (or buffer-file-name (buffer-name)))
@@ -1444,6 +717,7 @@ Drawing again replaces the scene in the same buffer and keeps its view."
 (defun excali-dsl-insert (string)
   "Add the diagram DSL STRING draws to the current excali scene.
 It is centered in the view and selected, one undo step."
+  (require 'excali)
   (let* ((elements (condition-case err (excali-dsl-elements string)
                      (excali-dsl-error (excali-dsl--signal-user err))))
          (bounds (excali--elements-bounds elements))
@@ -1464,7 +738,7 @@ For pasting a diagram written elsewhere, for example by a program."
   (excali-dsl-insert (current-kill 0)))
 
 (defun excali-dsl-insert-file (file)
-  "Add the diagram in the .edsl FILE to the current excali scene."
+  "Add the diagram in the .excalidsl FILE to the current excali scene."
   (interactive "fDiagram file: ")
   (excali-dsl-insert (with-temp-buffer
                        (insert-file-contents file)
@@ -1478,35 +752,25 @@ For pasting a diagram written elsewhere, for example by a program."
 ;;;; The major mode
 
 (defconst excali-dsl--keywords
-  '("container" "group" "flow" "service" "layer" "component" "subsystem" "zone"
-    "cluster" "componentType" "connection" "connections" "template" "diagram"
-    "layout" "style" "as" "layers")
-  "Keywords of the diagram DSL.")
+  '("node" "edge" "style" "default" "above" "below" "left" "right" "of" "level" "with" "from" "to")
+  "Keywords of Excali DSL.")
 
 (defvar excali-dsl-font-lock-keywords
-  `(("\\`---\\(?:.\\|\n\\)*?^---" 0 font-lock-preprocessor-face)
-    (,(concat "\\_<" (regexp-opt excali-dsl--keywords) "\\_>") . font-lock-keyword-face)
-    (,excali-dsl--arrow-regexp . font-lock-builtin-face)
-    ("\\[\\([^]\"\n[]*\\)\\]" 1 font-lock-string-face)
-    ("\\_<\\([[:alnum:]_.-]+\\)[ \t]*:" 1 font-lock-variable-name-face)
-    ("#[[:xdigit:]]\\{6\\}\\_>" . font-lock-constant-face)
-    ("@[[:alnum:]_]+" . font-lock-type-face)
-    ("^[ \t]*\\([[:alnum:]_.]+\\)" 1 font-lock-function-name-face))
-  "Font lock rules of `excali-dsl-mode'.")
+  `((,(concat "\\_<" (regexp-opt excali-dsl--keywords) "\\_>") . font-lock-keyword-face)
+    ("->" . font-lock-builtin-face)
+    ("\\_<\\([[:alnum:]_-]+\\)[ \t]*:" 1 font-lock-variable-name-face))
+  "Highlighting rules for Excali DSL.")
 
 (defvar excali-dsl-mode-syntax-table
   (let ((table (make-syntax-table)))
-    (modify-syntax-entry ?# "<" table)
+    (modify-syntax-entry ?/ ". 12" table)
     (modify-syntax-entry ?\n ">" table)
-    (modify-syntax-entry ?\" "\"" table)
     (modify-syntax-entry ?_ "_" table)
     (modify-syntax-entry ?. "_" table)
     (modify-syntax-entry ?{ "(}" table)
     (modify-syntax-entry ?} "){" table)
-    (modify-syntax-entry ?\[ "(]" table)
-    (modify-syntax-entry ?\] ")[" table)
     table)
-  "Syntax table of `excali-dsl-mode'.")
+  "Syntax table for Excali DSL.")
 
 (defun excali-dsl-indent-line ()
   "Indent the current line by its brace depth."
@@ -1514,8 +778,13 @@ For pasting a diagram written elsewhere, for example by a program."
   (let* ((depth (save-excursion
                   (beginning-of-line)
                   (car (syntax-ppss))))
-         (closing (save-excursion (back-to-indentation) (looking-at "[]}]")))
-         (column (* excali-dsl-indent-offset (max 0 (- depth (if closing 1 0)))))
+         (closing (save-excursion (back-to-indentation) (looking-at "}")))
+         (continuation (and (= depth 0) (not closing)
+                            (save-excursion
+                              (back-to-indentation)
+                              (not (or (looking-at "\\(?:node\\|edge\\|style\\|default\\)\\_>")
+                                       (looking-at "//") (eolp))))))
+         (column (* excali-dsl-indent-offset (max (if continuation 1 0) (- depth (if closing 1 0)))))
          (offset (- (current-column) (current-indentation))))
     (indent-line-to column)
     (when (> offset 0) (forward-char offset))))
@@ -1525,20 +794,20 @@ For pasting a diagram written elsewhere, for example by a program."
   "C-c C-e" #'excali-dsl-export)
 
 ;;;###autoload
-(define-derived-mode excali-dsl-mode prog-mode "EDSL"
-  "Major mode for diagrams in the excalidraw-dsl language.
+(define-derived-mode excali-dsl-mode prog-mode "Excali DSL"
+  "Major mode for diagrams in Excali DSL (.excalidsl).
 \\<excali-dsl-mode-map>\\[excali-dsl-render] draws the buffer in an excali \
 buffer, \\[excali-dsl-export] writes it to an .excalidraw file.
 
 \\{excali-dsl-mode-map}"
-  (setq-local comment-start "# "
-              comment-start-skip "#+[ \t]*"
+  (setq-local comment-start "// "
+              comment-start-skip "//+[ \t]*"
               font-lock-defaults '(excali-dsl-font-lock-keywords)
               indent-line-function #'excali-dsl-indent-line)
   (add-hook 'after-save-hook #'excali-dsl--after-save nil t))
 
 ;;;###autoload
-(add-to-list 'auto-mode-alist '("\\.edsl\\'" . excali-dsl-mode))
+(add-to-list 'auto-mode-alist '("\\.excalidsl\\'" . excali-dsl-mode))
 
 (provide 'excali-dsl)
 ;;; excali-dsl.el ends here

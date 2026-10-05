@@ -29,9 +29,8 @@ and it needs Emacs 32 (master) — the first Emacs with the canvas API.
   library (=.excalidrawlib=) with the official collection of
   libraries.excalidraw.com one command away, and PNG/SVG export with the
   scene embedded so Excalidraw can open the export again.
-- Diagrams from text: the =.edsl= language of [[https://github.com/tyrchen/excalidraw-dsl][excalidraw-dsl]], laid out
-  automatically and drawn with bound arrows and labels you can go on
-  editing.
+- Diagrams from text: *Excali DSL* (=.excalidsl=), with readable relative
+  placement, dotted containers, explicit style blocks, and editable bound arrows.
 - Smooth on large scenes: only damaged areas repaint, panning reuses
   pixels, zooming shows an instant preview, and on macOS a CoreAnimation
   layer bypasses Emacs's image refresh.
@@ -52,14 +51,70 @@ runs several times slower, which large scenes feel.  Emacs picks the
 =.elc= files up by itself, and native-compiles them in the background
 where it can.
 
+** Local clone: example configuration
+
+Replace =/path/to/excali-mode= with your clone directory. This configuration
+checks for Canvas support and the built module, keeps the drawing commands
+lazy-loaded, and registers the DSL extension before the package is loaded:
+
 #+begin_src emacs-lisp
-(use-package excali
-  :load-path "/path/to/excali-mode"
-  :commands (excali-open excali-new))
+(let ((excali-directory (expand-file-name "/path/to/excali-mode")))
+  (when (and (>= emacs-major-version 32)
+             (fboundp 'canvas-refresh)
+             (image-type-available-p 'canvas)
+             (file-exists-p
+              (expand-file-name (concat "excali-module" module-file-suffix)
+                                excali-directory)))
+    (add-to-list 'load-path excali-directory)
+
+    (use-package excali
+      :defer t
+      :commands (excali-open excali-new))
+
+    ;; Text source files, NOT .excalidraw scene files.
+    (autoload 'excali-dsl-mode "excali-dsl" nil t)
+    (add-to-list 'auto-mode-alist
+                 '("\\.excalidsl\\'" . excali-dsl-mode))))
 #+end_src
 
 =M-x excali-open= opens a =.excalidraw= file (or a PNG/SVG exported with
 an embedded scene); =M-x excali-new= starts an empty drawing.
+
+The explicit =autoload= and =auto-mode-alist= entries let an =.excalidsl=
+file activate its mode even before you have opened a canvas. The registration
+inside =excali-dsl.el= alone is not enough when a local clone is lazy-loaded
+without generated package autoloads. If any guard above fails, the setup is
+skipped; check your Emacs build, clone path, and =make= output.
+
+If you already configure =excali= with =use-package= and a working load path,
+adding =:mode ("\\.excalidsl\\'" . excali-dsl-mode)= to that declaration is
+an alternative to the two explicit DSL registration forms above.
+
+*** First DSL preview
+
+1. Evaluate the configuration, or restart Emacs.
+2. Open [[file:examples/excali-dsl/application.excalidsl][examples/excali-dsl/application.excalidsl]]. The mode line should show
+   *Excali DSL*, not Fundamental. For a file already open before configuration,
+   run =M-x normal-mode= in its buffer.
+3. In the *DSL source buffer*, press =C-c C-c= to preview; press it again to
+   refresh the same canvas. These bindings do not belong to the canvas buffer.
+4. Press =C-c C-e= in the source buffer and choose an =.excalidraw= output file.
+
+| Extension | Contents | How to open |
+|-----------+----------+-------------|
+| =.excalidsl= | Excali DSL text source | =excali-dsl-mode=; =C-c C-c= previews |
+| =.excalidraw= | Native JSON scene | =M-x excali-open= |
+| =.edsl= | Former DSL syntax | No longer supported; rewrite using Excali DSL |
+
+Do *not* associate =.excalidraw= with =excali-dsl-mode=. If you previously
+evaluated that incorrect association, remove it from your initialization file
+and evaluate this once to clean up the current session:
+
+#+begin_src emacs-lisp
+(setq auto-mode-alist
+      (delete '("\\.excalidraw\\'" . excali-dsl-mode)
+              auto-mode-alist))
+#+end_src
 
 ** With elpaca
 
@@ -75,9 +130,10 @@ ln -sf /path/to/excali-mode/excali-module.so ~/.config/emacs/elpaca/builds/excal
 
 #+begin_src emacs-lisp
 (use-package excali
-  ;; :vc :url "https://github.com/yibie/excali-mode" :branch "v0.1.1"
+  ;; :vc :url "https://github.com/yibie/excali-mode" :branch "v0.2.0"
   :ensure (:repo "/path/to/excali-mode"
            :pre-build (("ln" "-s" "/path/to/excali-mode/excali-module.so" "."))) ;; you could do this manually as well.
+  :mode ("\\.excalidsl\\'" . excali-dsl-mode)
   :config
   (add-hook 'excali-mode-hook
             (lambda ()
@@ -191,69 +247,112 @@ macOS), and the usual Emacs keys work too.  =?= lists everything.
 
 * Drawing from text
 
-=excali-dsl-mode= edits =.edsl= files, the language of [[https://github.com/tyrchen/excalidraw-dsl][excalidraw-dsl]];
-=C-c C-c= draws the buffer in an excali buffer beside it (again: the
-same buffer, same view), =C-c C-e= writes an =.excalidraw= file.  The
-layout is layered, like dagre: nodes by rank along the edges, each
-container laid out on its own and placed as one block, and straight
-edges bent around the shapes in their way.  Everything drawn is
-ordinary Excalidraw: arrows are bound and follow their shapes, labels
-are bound text.
+*Excali DSL* (=.excalidsl=) is a text language designed for excali-mode,
+with relative placement inspired by [[https://github.com/reladraw/reladraw][reladraw]].  It replaces the old
+=.edsl= syntax; this is not a reladraw compatibility layer.
+
+Open an =.excalidsl= file in =excali-dsl-mode=:
+- =C-c C-c= draws it in a scene beside the source; repeat to refresh.
+- =C-c C-e= exports a native, editable =.excalidraw= file.
+- Set =excali-dsl-render-on-save= to refresh an existing preview on save.
 
 #+begin_src text
----
-direction: LR            # TB (default), BT, LR, RL
-nodeSpacing: 60
-rankSpacing: 90
----
-componentType service {
-  shape: rectangle;
-  style { fill: "#e3f2fd"; strokeColor: "#1976d2"; }
+style service {
+  fill: "#dbeafe"
+  fill-style: hachure
 }
 
-client[Web Client]
-container "Backend" as backend {
-  api[API] { type: service }
-  db[Database] { shape: ellipse; backgroundColor: "#fce4ec" }
-  api -> db: query
+node system "Application"
+node system.ui "Interface" { style: service }
+node system.api "API" below system.ui { style: service }
+node database "Database" right of system level with system.api
+
+edge system.ui -> system.api "request" from: bottom to: top
+edge system.api -> database "query" from: right to: left {
+  routing: elbow
 }
-client -> api: HTTPS
-api -> cache -> db       # a chain; `cache' is made on first use
-db <-> replica @orthogonal
 #+end_src
 
-- Nodes: =id=, =id[Label]= or =id "Label"=, then =@type= or a
-  ={ key: value; ... }= block: =shape= (rectangle, ellipse, diamond,
-  cylinder, text), =backgroundColor= or =fill=, =strokeColor=,
-  =strokeWidth=, =strokeStyle=, =fillStyle=, =roughness=, =roundness=,
-  =opacity=, =font=, =fontSize=, =textColor=, =width=, =height=, =type=.
-- Edges: =->=, =<->=, =--= or =---= (no heads), =~>= (curved); labels
-  as =a -> b: text=, =a -> b "text"= or =a -> b {text}=; a style block
-  with =strokeColor= or =color=, =strokeWidth= or =width=,
-  =strokeStyle=, =startArrowhead=, =endArrowhead= and =routing=
-  (straight, orthogonal, curved); or =@orthogonal=, =@curved=.
-- Containers, =container "Label" as id { ... }= or =container id "Label"
-  {=, and groups, =group=, =flow=, =service=, =layer=, =component=,
-  =subsystem=, =zone= or =cluster= followed by a label, nest.  A
-  cluster's own =key: value= lines or =style: { ... }= style it, and
-  =layout: horizontal=, =vertical= or =grid(N)= arranges members without
-  edges.  =backend.api= refers to =api= in =backend=.
-- =componentType=, =connection= and =connections= blocks, front matter
-  =component_types= and =templates=, and =template= with =layers= plus
-  =diagram "Title" { template: name }=.
-- Front matter: =direction= (or =rankdir=, =layout_options=),
-  =nodeSpacing= or =nodesep=, =rankSpacing= or =ranksep=, =theme= (dark),
-  =font=, =sketchiness=, =stroke_width=, =background_color=, =routing=.
+Dotted identifiers define containment. Placement and attachment sides
+stay outside style blocks; appearance uses explicit ={ ... }= blocks.
+Properties are separated by newlines or semicolons. Reusable =style=
+and =default node= / =default edge= blocks are document-wide.
 
-From Lisp, =(excali-dsl-elements STRING)= returns the elements and
-=(excali-dsl-scene STRING)= a whole document.  In an excali buffer
-=M-x excali-dsl-yank= adds the diagram on the kill ring at the view
-center, =M-x excali-dsl-insert-file= one from a file.  Errors name
-their line.  =docs/dsl.md= is a compact reference of the language.
+Layout jointly solves positions and container sizes, with measured text,
+a minimum 80-unit directional gap, and 30-unit container padding. Contradictory
+constraints and disconnected nodes are errors, not silently rearranged.
+Arrows stay bound to shapes, and leaf/edge labels are bound text.
+Container titles are grouped with their boundary; containers are not
+clipping frames. Straight edges do not avoid obstacles automatically.
 
-Not supported: the force and ELK layouts (the layered one is used),
-upstream's ML layout, and template layouts other than per-layer
-=horizontal=, =vertical= and =grid(N)=.
+From Lisp, =(excali-dsl-elements STRING)= returns elements,
+=(excali-dsl-scene STRING)= returns a document, and
+=(excali-dsl-write STRING FILE)= exports atomically without opening a
+canvas. In an excali buffer, =M-x excali-dsl-yank= and
+=M-x excali-dsl-insert-file= insert a diagram at the view center.
+
+See the [[file:docs/excali-dsl.md][language reference]] and [[file:examples/excali-dsl/README.md][runnable examples]].
+The source remains authoritative: regeneration replaces manual canvas
+changes. For diagrams embedded in documents, see the Org Babel setup below.
+
+* Org Babel: diagrams in documents
+
+=ob-excali.el= adds the =excali= source-block language. It uses the same
+DSL, layout and renderer as =.excalidsl= files; no external process or
+interactive canvas is needed. Build with =make= and configure the clone's
+=load-path= as above, then enable it without discarding your other Babel
+languages:
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'org
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   (cons '(excali . t)
+         (assq-delete-all 'excali (copy-tree org-babel-load-languages)))))
+#+end_src
+
+Add this block to an Org document:
+
+#+begin_example
+#+begin_src excali :file diagrams/application.svg :mkdirp yes :results file graphics
+node system "Application"
+node system.ui "Interface"
+node system.api "API" below system.ui
+node database "Database" right of system level with system.api
+
+edge system.ui -> system.api "request" from: bottom to: top
+edge system.api -> database "query" from: right to: left
+#+end_src
+#+end_example
+
+In the *Org buffer*, =C-c C-c= executes the block using normal Babel
+confirmation and inserts a result link. =C-c '= opens the source in
+=excali-dsl-mode=; in that edit buffer =C-c '= returns to Org, while
+=C-c C-c= follows Org's edit-buffer save-and-exit binding. Use
+=C-c C-x C-v= in Org to toggle inline images (SVG display depends on your
+Emacs image support).
+
+- =:file= is required. Its extension selects =.svg=, =.png= or =.excalidraw=.
+  Use =:results file graphics= for images and =:results file= for a native scene.
+  The default is =:results file :exports results=.
+- Relative output paths use Babel's execution directory: normally the Org
+  file's directory, or =:dir= when provided. Use =:mkdirp yes= to create missing
+  directories. Outputs must be local files.
+- PNG/SVG use =excali-export-background=, =excali-export-padding=,
+  =excali-export-scale= and =excali-export-embed-scene=. Embedded scenes are
+  enabled by default, so these images can also be reopened with =excali-open=.
+- Generation uses a temporary file and an atomic rename. Parse, layout or
+  rendering failures preserve an existing output and its Org result link.
+  DSL errors identify the Org file, block start and line/column within the
+  expanded DSL body (after any Babel noweb expansion).
+- Execution confirmation and =:eval= are controlled by Org, not disabled by
+  this adapter. Standard Babel header expressions and noweb references still
+  obey Org's own processing rules: execute only trusted documents.
+- Sessions, =:var= substitution, =:cmd= / =:cmdline=, =:prologue= and
+  =:epilogue= are not supported. No automatic execution or scene-to-source
+  synchronization is installed.
+
+See [[file:examples/org-babel/application.org][the runnable Org example]] for all three output formats.
 
 * Presentation backends
 
@@ -413,10 +512,10 @@ No dark-mode export yet.
 - =excali-frame-render.el= — frame titles, name label bounds, frame
   render data.
 - =excali-export.el= — PNG/SVG export and import of embedded scenes.
-- =excali-dsl.el= — the =.edsl= diagram language: parser, model, drawing,
-  =excali-dsl-mode=.
-- =excali-dsl-layout.el= — layered graph layout (cycle breaking,
-  layering, crossing reduction, least-squares placement).
+- =excali-dsl.el= — Excali DSL model, native drawing, and =excali-dsl-mode=.
+- =ob-excali.el= — optional Org Babel adapter for SVG, PNG and native scenes.
+- =excali-dsl-parser.el= — lexer, parser, style schema and validation.
+- =excali-dsl-constraints.el= — joint relative-position/container-size solver.
 - =excali-bench.el= — backend benchmarks.
 - =excali.el= — keymap, major mode and entry points.
 

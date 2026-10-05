@@ -14,3 +14,6 @@ fonts/*/
 /demo/dry.el
 /demo/Makefile
 /demo/record.sh
+
+# Generated files from the Org Babel examples.
+/examples/org-babel/output/

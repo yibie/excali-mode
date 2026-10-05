@@ -106,7 +106,7 @@ EMACS_Q_FIX = --eval "(let ((lib (car (file-expand-wildcards \"/opt/homebrew/opt
 
 .PHONY: all module compile test bench try info clean fonts hero
 
-LISP := $(wildcard excali*.el)
+LISP := $(wildcard excali*.el ob-excali.el)
 
 all: module compile
 

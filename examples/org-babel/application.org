@@ -1,0 +1,59 @@
+#+title: Excali DSL in Org Babel
+
+* Setup
+
+Build excali-mode with =make=, put the clone on =load-path=, and add this
+configuration to your Emacs initialization file (not to the drawing block):
+
+#+begin_src emacs-lisp :eval never
+(with-eval-after-load 'org
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   (cons '(excali . t)
+         (assq-delete-all 'excali (copy-tree org-babel-load-languages)))))
+#+end_src
+
+In each =excali= block, press =C-c C-c= and confirm execution. The result
+is a file link. Use =C-c '= to edit the source in Excali DSL mode and
+=C-c C-x C-v= to toggle inline images. Outputs go into =output/= beside
+this file; =:mkdirp yes= creates the directory.
+
+* SVG diagram
+
+#+name: application
+#+begin_src excali :file output/application.svg :mkdirp yes :results file graphics
+style service {
+  fill: "#dbeafe"
+  fill-style: hachure
+}
+
+node system "Application"
+node system.ui "Interface" { style: service }
+node system.api "API" below system.ui { style: service }
+node database "Database" right of system level with system.api {
+  shape: ellipse
+  fill: "#dcfce7"
+}
+
+edge system.ui -> system.api "request" from: bottom to: top
+edge system.api -> database "query" from: right to: left { routing: elbow }
+#+end_src
+
+* PNG diagram
+
+#+begin_src excali :file output/flow.png :mkdirp yes :results file graphics
+node source "Source" { fill: "#dbeafe" }
+node result "Result" right of source { fill: "#dcfce7" }
+edge source -> result "render"
+#+end_src
+
+* Editable native scene
+
+Use =M-x excali-open= to open the generated =.excalidraw= file. It is a
+scene, not an inline image. Regeneration replaces manual canvas changes.
+
+#+begin_src excali :file output/editable.excalidraw :mkdirp yes :results file
+node source "Source"
+node result "Editable scene" right of source
+edge source -> result
+#+end_src

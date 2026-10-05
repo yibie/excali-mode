@@ -1,0 +1,8 @@
+node system "Application"
+node system.ui "Interface"
+node system.api "API" below system.ui
+
+node database "Database" right of system level with system.api
+
+edge system.ui -> system.api "request" from: bottom to: top
+edge system.api -> database "query" from: right to: left

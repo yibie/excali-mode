@@ -1,0 +1,16 @@
+default node { font: sans; roughness: 0 }
+default edge { routing: elbow }
+
+style decision {
+  shape: diamond
+  fill: "#fff3bf"
+}
+
+node draft "Draft"
+node review "Review" right of draft { style: decision }
+node publish "Publish" right of review { fill: "#dcfce7" }
+node revise "Revise" below review { fill: "#ffe3e3" }
+
+edge draft -> review from: right to: left
+edge review -> publish "approved" from: right to: left
+edge review -> revise "changes needed" from: bottom to: top

@@ -1,0 +1,37 @@
+// Style declarations do not change containment or placement.
+default node {
+  font: hand
+  font-size: 20
+}
+
+default edge {
+  stroke: "#495057"
+  stroke-width: 2
+}
+
+style service {
+  fill: "#dbeafe"
+  fill-style: hachure
+}
+
+style storage {
+  shape: ellipse
+  fill: "#dcfce7"
+  fill-style: solid
+}
+
+node system "Application" { fill: "#f8f9fa" }
+node system.ui "Interface" { style: service }
+node system.api "API" below system.ui {
+  style: service
+  fill: "#e0e7ff"
+}
+
+node database "Database" right of system level with system.api {
+  style: storage; stroke: "#2f9e44"
+}
+
+edge system.ui -> system.api "request" from: bottom to: top
+edge system.api -> database "query" from: right to: left {
+  routing: elbow
+}
