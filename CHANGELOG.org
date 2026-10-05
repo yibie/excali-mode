@@ -17,6 +17,11 @@
 - Source-located errors, deterministic sketch seeds, and atomic scene export.
 - Runnable examples and the language reference in =docs/excali-dsl.md=.
 
+** Documentation
+
+- Add a 45-second English-captioned demo of explicit node placement, style
+  blocks, and editing/regenerating the same diagram inside Org Babel.
+
 ** Fixed
 
 - Load the canvas entry points when previewing directly from an autoloaded DSL

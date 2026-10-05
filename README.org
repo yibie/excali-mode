@@ -13,6 +13,17 @@ Cairo and Pango straight into the pixel buffer of Emacs 32's new
 It is an unofficial port, not affiliated with the Excalidraw project,
 and it needs Emacs 32 (master) — the first Emacs with the canvas API.
 
+* 0.2.0 demo: placement, styling and Org
+
+[[https://github.com/yibie/excali-mode/releases/download/v0.2.0/excali-mode-v0.2.0-demo.mp4][Watch the 45-second demo]] (1080p, English captions, no audio).
+
+The custom DSL lets you specify relative node positions rather than leaving
+arrangement entirely to automatic layout. The demo changes =right of= to
+=left of=, adds a node style block, then uses the same source and styles in
+Org Babel and regenerates the inline image after another placement change.
+
+The video is also included at [[file:demo/excali-v0.2.0.mp4][demo/excali-v0.2.0.mp4]].
+
 * Features
 
 - Every Excalidraw tool: rectangle, diamond, ellipse, arrow, line, pen,
