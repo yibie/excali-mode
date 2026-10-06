@@ -94,6 +94,11 @@ Return the release event, or nil if another event ended the drag."
                 (setq pending nil)
                 (redisplay)))
              ((eq (event-basic-type event) button)
+              ;; A fast/coalesced drag may deliver only its release event.
+              ;; Apply its endpoint instead of losing the entire movement.
+              (when (memq 'drag (event-modifiers event))
+                (setq pending
+                      (excali--damage-union pending (funcall on-move event))))
               (when pending (excali--render pending))
               (setq excali--last-release (list (excali--event-scene-xy event)))
               (throw 'done event))
@@ -257,6 +262,7 @@ With ADD, extend the existing selection instead of replacing it."
 With shift, clicking toggles elements in the selection and box selection
 adds to it."
   (interactive "e")
+  (excali--select-event-view event)
   (let* ((start (excali--event-scene-xy event))
          (mods (event-modifiers event))
          (shift (memq 'shift mods))
@@ -331,6 +337,7 @@ adds to it."
   "Pan the view while the button pressed at EVENT is held.
 The middle and right buttons pan."
   (interactive "e")
+  (excali--select-event-view event)
   (excali--pan-drag event (event-basic-type event)))
 
 (defun excali--await-release ()
@@ -356,6 +363,7 @@ can be selected one by one; double-clicking text edits it, and a shape
 that can hold text gets its label edited or added; elsewhere a new text
 element is created."
   (interactive "e")
+  (excali--select-event-view event)
   (excali--await-release)
   (let* ((xy (excali--event-scene-xy event))
          (hit (excali--hit xy))

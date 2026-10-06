@@ -267,12 +267,17 @@ follow the standard ones."
         (setq out (append out (list cell)))))
     (excali--json-encode out)))
 
+(defvar-local excali-before-save-hook nil
+  "Hook run after choosing the scene path but before writing it.
+Derived modes can validate their document extensions here.")
+
 (defun excali-save ()
   "Write the scene back to its .excalidraw file."
   (interactive)
   (unless excali--file
     (setq excali--file (read-file-name "Save scene to: " nil nil nil
                                       "untitled.excalidraw")))
+  (run-hooks 'excali-before-save-hook)
   (let ((doc (copy-alist excali--doc)))
     (when (fboundp 'excali--save-current-style)
       (setf (alist-get 'appState doc)

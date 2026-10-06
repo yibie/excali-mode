@@ -1,5 +1,87 @@
 #+title: Changelog
 
+* 0.3.0 — 2026-10-05
+
+** New
+
+- Named multiple vaults via =excali-board-vaults=: new boards automatically
+  match the source directory, choosing the deepest nested root. No active-vault
+  switching or vault picker is needed. Single and multiple vaults use the same
+  configuration list; existing boards retain their persisted roots.
+
+- Configure =excali-board-vaults= once: new boards validate their
+  source directory and destination against the vault, ask only for a filename,
+  and save immediately without overwriting existing files. Outside-vault
+  creation is blocked with guidance to configure the vault or use =excali-new=.
+- Opening existing boards also preserves the source pane on the left.
+
+- Double-click file/media cards to open their original file in another Emacs
+  window, using the same local-file validation as =C-c C-f=.
+
+- Typed, linked static media cards: PDF first-page preview, image/video
+  thumbnails and audio cover art with a type-icon fallback. Optional Poppler
+  and FFmpeg previews are asynchronous, concurrency-limited and timed out.
+- Explicit media relinking and preview retry; no playback, PDF navigation or
+  preview data embedded in the board document. Closing a board cancels jobs
+  and removes temporary previews.
+
+- Create a connected Org note by double-clicking a free arrow endpoint or
+  pressing =C-c C-j=, preserving the existing arrow and label in one undo step.
+- Named groups, named frame-based regions (=C-c C-t=) and organization
+  navigation (=C-c C-v=), using standard group/frame structure.
+
+- Reading-state Org links use native Pango hit testing through wrapping,
+  scrolling and rotation, with safe supported-link dispatch.
+- Inline local file/Org attachment images render with clipped, proportional
+  previews; missing images degrade to placeholders. No remote image downloads
+  or image embedding into board documents.
+
+- Vault-bounded, explicit Org ID reference repair and reverse board lookup.
+  Duplicate IDs are reported; live unsaved boards take precedence in results.
+- Periodic external-source checks safely refresh clean buffers and report
+  conflicts without overwriting unsaved edits or cached card content.
+
+- Per-board vault directory with recursive, bounded file discovery and
+  relative-path completion for Org sources and attachments. Native Org DIR/ID
+  attachment resolution is shared infrastructure; it does not relocate files.
+
+- Independent Org text cards (=C-c C-n=), live editing and board-owned persistence.
+  Convert them to local Org headings (=C-c C-w=) without replacing their shapes
+  or connections. Conversion failures preserve the note and roll back Org edits;
+  undoing conversion in the board never deletes source text.
+- =excali-board-mode= derives from =excali-mode= for Org reference boards,
+  preserving the =.excalidraw= format with a versioned board marker.
+- Add headings from Org with explicit target-board selection, or insert from
+  the board with an Org file/heading picker. Source visits, debounced live
+  preview updates, save/reopen, error reporting and safe prototype migration.
+- Native formatted Org subtree cards with clipped, fixed-size content,
+  vertical/horizontal scrolling, and rich PNG/SVG viewport exports.
+- Fixed popup editing is independent of canvas pan, zoom and card rotation.
+  Expand the same Org buffer into an ordinary window with =C-c C-e=;
+  closing never implicitly saves the source or board.
+- Replace a card's source without losing layout or connections. Insert embedded
+  local images or linked file attachments; connect cards with labeled bound arrows.
+- New boards open in the right-hand pane, preserving the source on the left.
+
+** Upgrade
+
+- Rich cards require rebuilding the native module (=make module=) and restarting
+  Emacs. Regular drawings remain independent of the optional board Lisp module.
+
+** Fixed
+
+- Converting an independent note to an Org heading reuses its existing title
+  without a second title prompt or a duplicate wrapper heading.
+
+- Explicitly bind double/triple wheel events so continuous mouse-wheel bursts
+  are not swallowed by the canvas hotspot fallback after their first event.
+- Board wheel dispatch now overrides global precision-scroll commands locally,
+  without disabling precision scrolling in Org or other buffers.
+- Card body wheel scrolling no longer requires selection. Both internal
+  scrollbar thumbs now support dragging and track clicks without moving cards.
+- Mouse presses from another buffer activate the receiving canvas before
+  reading scene state. Coalesced drags apply their final release position.
+
 * 0.2.0 — 2026-10-04
 
 ** Breaking

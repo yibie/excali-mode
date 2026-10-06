@@ -31,10 +31,10 @@ ifeq ($(EMACS_MODULE_INCLUDE),)
 $(error emacs-module.h not found; set EMACS_MODULE_INCLUDE=/path/to/include)
 endif
 
-SOURCES := src/excali-module.c src/excali-render.c src/excali-text.c src/excali-overlay.c \
+SOURCES := src/excali-board.c src/excali-module.c src/excali-render.c src/excali-text.c src/excali-overlay.c \
 	src/excali-preview.c src/excali-rough.c src/excali-shape.c src/excali-freehand.c src/excali-sticky.c \
 	src/excali-image.c src/excali-frame.c src/excali-export.c src/excali-fill.c
-HEADERS := src/excali-render.h src/excali-text.h src/excali-overlay.h src/excali-layer.h src/excali-cursor.h \
+HEADERS := src/excali-board.h src/excali-render.h src/excali-text.h src/excali-overlay.h src/excali-layer.h src/excali-cursor.h \
 	src/excali-preview.h src/excali-rough.h src/excali-shape.h src/excali-freehand.h src/excali-sticky.h \
 	src/excali-image.h src/excali-frame.h src/excali-export.h src/excali-fill.h
 OBJECTS := $(patsubst src/%.c,build/%.o,$(SOURCES))

@@ -58,7 +58,13 @@ typedef struct {
 } ExcaliMedia;
 
 typedef struct {
-	ExcaliType type;
+        char *markup;
+        char *image_id;
+        bool nowrap;
+} ExcaliBoardBlock;
+
+typedef struct {
+        ExcaliType type;
 	double x, y, width, height, angle;
 	char *stroke_color;
 	char *background_color;
@@ -93,7 +99,11 @@ typedef struct {
 	int simulate_pressure;   /* 1 true, 0 false, -1 absent.  */
 	bool constant_width;     /* strokeOptions.variability == "constant".  */
 	double streamline;       /* strokeOptions.streamline, default 0.5.  */
-	ExcaliMedia media; /* Image and frame data, see excali-image.h.  */
+        ExcaliBoardBlock *board_blocks;
+        size_t board_count;
+        char *board_title;
+        double board_scroll_x, board_scroll_y;
+        ExcaliMedia media; /* Image and frame data, see excali-image.h.  */
 	/* A copy of a compiled element (excali-native-element-compile),
 	   whose strings and arrays that element owns.  */
 	bool borrowed;

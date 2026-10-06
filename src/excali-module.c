@@ -2,6 +2,7 @@
 /* Copyright (C) 2026 yibie
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
+#include "excali-board.h"
 #include <emacs-module.h>
 #include <math.h>
 #include <stdlib.h>
@@ -203,13 +204,73 @@ static void free_element(ExcaliElement *e)
 	free(e->start_arrowhead);
 	free(e->sticky_footer);
 	free(e->end_arrowhead);
-	free(e->pressures);
+        free(e->pressures);
+        for (size_t i = 0; i < e->board_count; ++i) {
+                free(e->board_blocks[i].markup);
+                free(e->board_blocks[i].image_id);
+        }
+        free(e->board_blocks);
+        free(e->board_title);
+}
+
+static void read_board_blocks(emacs_env *env, emacs_value blocks, ExcaliElement *e)
+{
+        if (!type_is(env, blocks, Qvector)) return;
+        ptrdiff_t n = env->vec_size(env, blocks);
+        if (n < 0 || n > 100000) return;
+        e->board_blocks = calloc(n ? (size_t)n : 1, sizeof *e->board_blocks);
+        if (!e->board_blocks) return;
+        e->board_count = (size_t)n;
+        for (ptrdiff_t i = 0; i < n; ++i) {
+                emacs_value block = env->vec_get(env, blocks, i);
+                if (!type_is(env, block, Qvector) || env->vec_size(env, block) < 2) continue;
+                e->board_blocks[i].markup = get_string(env, env->vec_get(env, block, 0));
+                e->board_blocks[i].nowrap = get_number(env, env->vec_get(env, block, 1), 0) != 0;
+                if (env->vec_size(env, block) > 3 &&
+                    type_is(env, env->vec_get(env, block, 3), Qstring))
+                        e->board_blocks[i].image_id = get_string(env, env->vec_get(env, block, 3));
+        }
+}
+
+static emacs_value Fexcali_native_board_measure(emacs_env *env, ptrdiff_t nargs,
+                                               emacs_value *args, void *data)
+{
+        (void)nargs; (void)data;
+        ExcaliElement e = {0};
+        e.width = get_number(env, args[1], 360);
+        read_board_blocks(env, args[0], &e);
+        double w, h;
+        excali_board_measure(&e, &w, &h);
+        free_element(&e);
+        return env->funcall(env, env->intern(env, "vector"), 2,
+                           (emacs_value[]){env->make_float(env, w), env->make_float(env, h)});
+}
+
+static emacs_value Fexcali_native_board_hit(emacs_env *env, ptrdiff_t nargs,
+                                           emacs_value *args, void *data)
+{
+        (void)nargs; (void)data;
+        ExcaliElement e = {0};
+        e.width = get_number(env, args[1], 360);
+        read_board_blocks(env, args[0], &e);
+        int block, index;
+        bool hit = excali_board_hit(&e, get_number(env, args[2], -1),
+                                   get_number(env, args[3], -1), &block, &index);
+        free_element(&e);
+        if (!hit) return Qnil;
+        return env->funcall(env, env->intern(env, "vector"), 2,
+                           (emacs_value[]){env->make_integer(env, block),
+                                          env->make_integer(env, index)});
 }
 
 /* Shape extras from `excali--native-shape-extras'.  */
 static void read_shape_extras(emacs_env *env, emacs_value extras,
                               ExcaliElement *e)
 {
+        read_board_blocks(env, get_extra(env, extras, "boardBlocks"), e);
+        e->board_title = get_extra_string(env, extras, "boardTitle");
+        e->board_scroll_x = fmax(0, get_extra_number(env, extras, "boardScrollX", 0));
+        e->board_scroll_y = fmax(0, get_extra_number(env, extras, "boardScrollY", 0));
 	e->roundness_type = (int)get_extra_number(env, extras, "roundnessType", 0);
 	e->roundness_value =
 	        get_extra_number(env, extras, "roundnessValue", NAN);
@@ -1542,6 +1603,10 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	bind(env, "excali-native-rough-random", Fexcali_native_rough_random, 2,
 	     "Return the first COUNT numbers of roughjs' Random for SEED.\n\n"
 	     "(fn SEED COUNT)");
+        bind(env, "excali-native-board-hit", Fexcali_native_board_hit, 4,
+             "Return [BLOCK UTF8-BYTE-INDEX] at content X Y, or nil.\n\n(fn BLOCKS WIDTH X Y)");
+        bind(env, "excali-native-board-measure", Fexcali_native_board_measure, 2,
+             "Measure escaped rich blocks at card WIDTH.\n\n(fn BLOCKS WIDTH)");
 	bind(env, "excali-native-measure-text", Fexcali_native_measure_text, 4,
 	     "Return (WIDTH . HEIGHT) of TEXT in scene units.\n\n"
 	     "(fn TEXT FONT-SIZE FONT-FAMILY LINE-HEIGHT)");

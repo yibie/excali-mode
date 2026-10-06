@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 yibie
 
 ;; Author: yibie <yibie@outlook.com>
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "32.0"))
 ;; Keywords: multimedia, tools
 ;; URL: https://github.com/yibie/excali-mode
@@ -246,16 +246,33 @@ or deselect."
   (add-hook 'post-command-hook #'excali--commit nil t)
   (add-hook 'post-command-hook #'excali--schedule-pointer-update nil t))
 
+(defvar-local excali-after-open-hook nil
+  "Hook run after a scene and its first view have been initialized.
+Derived modes can install buffer-local handlers here.")
+
+(declare-function excali-board-mode "excali-board" ())
+(declare-function excali-board--validate-document "excali-board" (doc))
+
+(defun excali--document-mode (doc)
+  "Return the editing mode for DOC without loading optional modes unnecessarily."
+  (if (assq 'excaliBoard doc)
+      (progn
+        (require 'excali-board)
+        (excali-board--validate-document doc)
+        #'excali-board-mode)
+    #'excali-mode))
+
 (defun excali--open (doc file name)
   "Show DOC saved to FILE in a buffer called NAME.
 DOC is a parsed .excalidraw file; it is restored (migrated and repaired,
 see `excali--restore-doc') before anything else sees it."
   (unless (and (display-graphic-p) (image-type-available-p 'canvas))
     (error "excali needs a graphical Emacs with Canvas images"))
-  (let ((doc (excali--restore-doc doc))
-        (buffer (generate-new-buffer name)))
+  (let* ((doc (excali--restore-doc doc))
+         (mode (excali--document-mode doc))
+         (buffer (generate-new-buffer name)))
     (pop-to-buffer-same-window buffer)
-    (excali-mode)
+    (funcall mode)
     ;; Keep fractional indices valid after every command, before
     ;; `excali--commit' snapshots the scene; see excali-index.el.
     (add-hook 'post-command-hook #'excali--sync-indices-maybe -50 t)
@@ -266,6 +283,7 @@ see `excali--restore-doc') before anything else sees it."
     (excali--load-grid-state (alist-get 'appState doc))
     (excali--history-reset)
     (excali--sync-canvas (selected-window))
+    (run-hooks 'excali-after-open-hook)
     buffer))
 
 ;;;###autoload

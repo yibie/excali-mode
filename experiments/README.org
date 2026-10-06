@@ -1,0 +1,94 @@
+#+title: Org card connectivity experiment
+
+* Superseded by the formal board mode
+
+For new work use =excali-board-new= / =excali-board-add-heading=; see
+[[file:../README.org::*Org boards][the board documentation]]. This prototype remains as a migration fixture.
+To migrate an existing experimental scene, open it and run
+=excali-board-from-scene=, then save the new board under a different name.
+The original scene is not overwritten. The formal mode does not require
+loading this experimental module.
+
+* Original prototype instructions
+
+This opt-in prototype explores Org headings as referenced canvas cards. It is
+not a released feature, an alternative DSL, or a replacement for =ob-excali=.
+Loading the experiment installs scoped layout/open adapters and a file-open
+hook; normal shapes and unrelated Org buffers are left unchanged. No global
+key bindings are installed. Mouse focus/drag fixes live in the core editor.
+It uses internal excali APIs and requires the same native module and graphical
+Emacs 32 Canvas support as excali-mode.
+
+* Quick experiment
+
+With the repository already on =load-path=, evaluate:
+
+#+begin_src emacs-lisp
+(load "/path/to/excali-mode/experiments/excali-org-prototype.el")
+#+end_src
+
+Then run =M-x excali-org-prototype-demo=. It creates a disposable directory
+containing =notes.org= and =board.excalidraw=, and displays its first heading
+as a card. The directory path is printed in =*Messages*=.
+
+1. Select the card and press =C-c C-o= to visit the actual Org heading.
+2. Edit its title or body, even without saving yet.
+3. Pause typing for 0.35 seconds: all cards referencing that source update,
+   including unsaved changes. Neither file is saved automatically.
+4. Click the canvas to select/drag a card. =C-c C-r= remains an explicit
+   selected-card refresh; =M-x excali-org-prototype-return= also refreshes.
+5. Move/style the card normally. Refresh preserves its position and style;
+   the bound text may grow the card to fit its content.
+6. Save Org with its normal =C-x C-s= and the canvas with =excali-save=.
+7. Reopen the scene with =excali-open=. With the experiment loaded, saved
+   Org references automatically enable the card commands and source watches.
+
+The minor mode temporarily overrides the canvas's =C-c C-r= binding with card
+refresh. Disable the minor mode to restore the normal canvas binding.
+
+For your own local file, place point on an Org heading and run
+=excali-org-prototype-add-heading=. It reuses the last experimental canvas,
+or creates one. A missing =ID= property is added, but the source is *not saved
+automatically*. Save the Org file yourself before relying on the reference
+across Emacs sessions.
+
+* Card appearance and interaction
+
+New cards use a white background, thin neutral border, small rounded corners,
+20-unit text insets and top-left sans-serif text, inspired by
+[[https://obsidian.md/canvas][Obsidian Canvas]]. Title and body are separated by whitespace; this is still
+a plain-text excerpt, not a rich Org rendering. New cards are spaced apart.
+Existing cards retain their styling on refresh.
+
+Click from the Org pane into a card to give the canvas keyboard focus.
+Drag its body to move it, or a selection corner/edge to resize it. A card is
+an ordinary editable rectangle with bound text, not a screenshot or locked
+overlay. Core mouse dispatch now selects the receiving window before reading
+scene state; coalesced drags apply their final release position.
+
+* Boundaries
+
+- Org owns title/TODO text and a short plain-text body excerpt. Properties and
+  child headings are excluded; markup is not rendered and code is not executed.
+- The scene stores a versioned =customData.excaliOrgPrototype= reference with
+  the Org ID and *absolute local file path*. Do not share it without reviewing
+  that path and the copied heading/body text for private information.
+- Heading renames/reordering work because identity uses the ID, not position.
+  Moving the source file between paths/machines is not supported yet.
+- Live edits/reverts in watched Org buffers refresh enabled canvases after an
+  idle delay. Refresh is undoable and source-to-canvas only; unchanged text
+  does not create an undo entry. Narrowed files are supported.
+- =C-c C-r= reports missing-source errors. Automatic refresh keeps cached text
+  on failure; =M-x excali-org-prototype-refresh-all= reports errors for all cards.
+- Deleting a card never deletes source content. A missing file/ID produces an
+  error without replacing the card's cached text. Deleted bound labels must
+  be repaired by recreating the card.
+- No inline Org editor, external-file watching, cross-file ID relocation, relationship
+  write-back, or Canvas/DSL bidirectional conversion is implemented.
+
+* Tests
+
+#+begin_src shell
+emacs -Q --batch -L . -L test -l excali-org-prototype-test \
+  -f ert-run-tests-batch-and-exit
+#+end_src

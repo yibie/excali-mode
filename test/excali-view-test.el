@@ -161,5 +161,48 @@ The tiles backend is used; both views are synced."
    (should (= excali--scroll-x 3.0))
    (should (null (excali--other-views)))))
 
+
+(ert-deftest excali-view-test-click-from-non-canvas-buffer ()
+  "Mouse dispatch must activate the receiving buffer, not the Org source."
+  (excali-test--in-window
+   (setq major-mode 'excali-mode)
+   (let* ((canvas (current-buffer))
+          (target (selected-window))
+          (source (generate-new-buffer " *org-source*"))
+          (start (excali-test--posn 15 15))
+          (end (excali-test--posn 35 30))
+          (card (excali--make-element "rectangle" 10 10
+                                     '(width . 80) '(height . 60)
+                                     '(backgroundColor . "#ffffff"))))
+     (unwind-protect
+         (progn
+           (setq excali--elements (list card))
+           (let ((other (split-window)))
+             (set-window-buffer other source)
+             (select-window other))
+           (should-not (eq (current-buffer) canvas))
+           ;; No intermediate motion event: real fast drags can be coalesced.
+           (setq unread-command-events (list (list 'drag-mouse-1 start end)))
+           (excali-mouse-down (list 'down-mouse-1 start))
+           (should (eq (selected-window) target))
+           (should (eq (current-buffer) canvas))
+           (should (equal excali--selection (list card)))
+           (should (= (excali--get card 'x) 30))
+           (should (= (excali--get card 'y) 25)))
+       (kill-buffer source)))))
+
+(ert-deftest excali-view-test-coalesced-resize-uses-release-endpoint ()
+  (excali-test--in-window
+   (let ((card (excali--make-element "rectangle" 10 10
+                                    '(width . 80) '(height . 60))))
+     (setq excali--elements (list card))
+     (excali--select (list card))
+     (let ((start (excali-test--posn 96 76))
+           (end (excali-test--posn 126 96)))
+       (setq unread-command-events (list (list 'drag-mouse-1 start end)))
+       (excali-mouse-down (list 'down-mouse-1 start)))
+     (should (> (excali--get card 'width) 80))
+     (should (> (excali--get card 'height) 60)))))
+
 (provide 'excali-view-test)
 ;;; excali-view-test.el ends here

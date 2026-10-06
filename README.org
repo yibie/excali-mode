@@ -141,7 +141,7 @@ ln -sf /path/to/excali-mode/excali-module.so ~/.config/emacs/elpaca/builds/excal
 
 #+begin_src emacs-lisp
 (use-package excali
-  ;; :vc :url "https://github.com/yibie/excali-mode" :branch "v0.2.0"
+  ;; :vc :url "https://github.com/yibie/excali-mode" :branch "v0.3.0"
   :ensure (:repo "/path/to/excali-mode"
            :pre-build (("ln" "-s" "/path/to/excali-mode/excali-module.so" "."))) ;; you could do this manually as well.
   :mode ("\\.excalidsl\\'" . excali-dsl-mode)
@@ -305,6 +305,428 @@ canvas. In an excali buffer, =M-x excali-dsl-yank= and
 See the [[file:docs/excali-dsl.md][language reference]] and [[file:examples/excali-dsl/README.md][runnable examples]].
 The source remains authoritative: regeneration replaces manual canvas
 changes. For diagrams embedded in documents, see the Org Babel setup below.
+
+* Org boards
+
+=excali-board-mode= is a *derived major mode of =excali-mode=*, not a second
+file format or an Org feature globally enabled in ordinary drawings. It
+inherits drawing, selection, transforms, arrows, groups and undo. Boards use
+=.excalidraw= files, not JSON Canvas.
+
+Cards display the *complete referenced subtree* using a native Cairo/Pango
+renderer: headings, emphasis, paragraphs, lists/checkboxes, aligned tables and
+literal code/example blocks. Content is clipped inside the card rather than
+growing its rectangle. Hover over a card body and use the wheel to scroll it, without selecting it;
+Shift-wheel scrolls wide tables/code sideways. Elsewhere the wheel pans the
+board, and Control-wheel still zooms. In the selection tool, drag either
+scrollbar thumb or click its track to reposition the content without moving
+the card.
+
+Referenced cards edit the actual Org subtree through a shared indirect buffer
+in a child frame, not an editable cache. Independent cards own their Org text
+in the board instead. Both support double-click editing; closing the editor
+does not automatically save a file.
+
+This is a focused Org board, not a complete Obsidian Canvas clone or a complete
+Org export backend. Drawers/planning are hidden, code is never executed, and
+supported Org links are clickable in reading state. Local inline images and
+static PDF/image/video/audio cards are supported. LaTeX rendering, web embeds,
+media playback and PDF page navigation are intentionally not provided.
+
+** Board features at a glance
+
+- *Org cards*: reference existing headings or write independent Org notes;
+  convert a note to a heading without re-entering its title.
+- *Reading and editing*: scroll inside cards, follow supported Org links,
+  display local inline images, and double-click Org cards for popup editing.
+- *Vault and references*: recursively discover files within a chosen directory,
+  explicitly repair moved Org references by ID, and find boards referencing
+  a heading. External updates preserve unsaved edits when conflicts occur.
+- *Spatial organization*: connect cards with bound arrows, create a new note
+  at a free arrow endpoint, and organize the board with named groups/regions.
+- *File cards*: display typed PDF, image, video and audio previews. Double-click
+  a file card to open its original file in another Emacs window.
+
+** Configuration
+
+Rebuild the native module with =make module= and *restart Emacs* when upgrading
+to rich cards; an already-loaded dynamic module cannot be replaced by loading
+the Lisp files again. No byte-compilation is required.
+
+After adding this repository to =load-path= as described above:
+
+#+begin_src emacs-lisp
+(use-package excali-board
+  :commands (excali-board-new
+             excali-board-open
+             excali-board-add-heading
+             excali-board-from-scene
+             excali-board-return)
+  :init
+  (setq excali-board-vaults
+        '(("Personal" . "~/Documents/notes/")
+          ("Work" . "~/Documents/work/")
+          ("Research" . "~/Documents/research/"))))
+#+end_src
+
+Configure =excali-board-vaults= with your existing local directories before
+creating boards. Names are labels, not folders to create. There is no separate
+"enter vault" command, global active-vault state, or per-creation vault picker.
+=excali-board-new= automatically matches the current Org file's directory to
+a configured root, asks only for a new filename, saves the =.excalidraw= file
+immediately, and displays it on the right. The filename picker starts in the
+source directory. Without a file-backed buffer, =default-directory= is used;
+from an existing board, its file directory is used.
+
+For nested roots, the *deepest matching directory wins*, independent of list
+order. Paths are canonicalized, including symlinks. The destination must stay
+in that same matched vault, not another configured vault (including a nested
+one). Creation outside every configured root is blocked *before* prompting
+or splitting windows. Update the configuration or use =excali-new= for an
+ordinary drawing anywhere. Existing files are never overwritten and Org
+sources are not automatically saved.
+
+All configured roots must exist and be local absolute paths (=~/= is allowed).
+An invalid entry reports a configuration error rather than silently selecting
+a broader root. Existing boards keep their persisted vault roots even if this
+list changes; their file discovery and reference repair still use those roots,
+not a combined search across the configured list.
+
+For one vault, use the same variable with a single entry:
+
+#+begin_src emacs-lisp
+(setq excali-board-vaults
+      '(("Notes" . "~/Documents/notes/")))
+#+end_src
+
+An empty list means no vault is configured: new board creation is blocked
+until a root is configured. There is no alternate directory setting or
+implicit fallback to the current directory.
+
+Or simply =(require 'excali-board)= and configure the vaults above. Do not map every =.excalidraw= file to
+the board mode: =excali-open= detects the document's versioned board marker
+and loads the derived mode when appropriate. Unmarked drawings remain in
+=excali-mode=. Enter through the new/open commands; the mode initializer
+itself is intentionally non-interactive, to avoid resetting a live drawing.
+
+** From Org to a board
+
+1. Put point on a heading in a local, file-backed Org buffer.
+2. Run =M-x excali-board-add-heading=.
+3. Choose an existing board buffer, =[Open board file...]=, or =[New board]=.
+4. Save the Org source yourself: an =ID= is added if needed but never saved
+   automatically. Save the board separately with =C-x C-s=.
+
+Cancelling target selection does not assign an ID. Duplicate heading titles
+are allowed: references use Org IDs, and the insertion picker displays outline
+paths and line numbers. Each invocation creates a new card; several cards or
+boards may reference the same heading.
+
+** From a board to Org
+
+| Command/key | Action |
+|-------------+--------|
+| =M-x excali-board-new= | Create and save a board inside the configured vault; show it on the right |
+| =M-x excali-board-open= | Open an existing marked board on the right |
+| =C-c C-i= | Choose an Org file and heading to insert |
+| =C-c C-n= | Create an independent Org text card |
+| =C-c C-w= | Convert an independent card into a heading in a local Org file |
+| =C-c C-o= | Visit the selected card's source heading, retaining the board pane |
+| Double-click an Org card / =C-c C-e= | Edit the Org card in a fixed popup |
+| =M-n= / =M-p= | Scroll selected card down/up one page |
+| =M-x excali-board-replace-source= | Choose a different heading without replacing the card or its connections |
+| =C-c C-a= | Insert a static media card or generic file attachment |
+| Double-click a file/media card / =C-c C-f= | Open the original file in another Emacs window |
+| =M-x excali-board-media-relink= | Explicitly choose a replacement file for the selected media card |
+| =M-x excali-board-media-refresh= | Discard transient media previews and retry generation |
+| =C-c C-l= | Connect two selected cards/shapes with an optionally labeled bound arrow |
+| Double-click a free arrow endpoint / =C-c C-j= | Create and connect a new Org note |
+| =C-c C-t= | Create a named region from the selection |
+| =C-c C-v= | Navigate to a named group or region |
+| =C-c C-r= | Refresh the selected card, or all cards if none is selected |
+| =M-x excali-board-refresh-all= | Refresh all cards and report source errors |
+| =M-x excali-board-return= | Return from Org to the last used board |
+| =C-x C-s= | Save the board, not its Org sources |
+| =!= | Fit the drawing in the current viewport |
+
+New boards split the current window left/right, or reuse a board pane already
+on the right. Repeating the command does not keep splitting that board pane.
+Unrelated panes are not replaced; if the window cannot be split, the command
+fails without replacing the source.
+
+Click a card to focus the board; drag to move or resize it. Edits in watched
+Org buffers update referencing boards after 0.35 idle seconds, including
+unsaved edits. Refresh is undoable, preserves position and style, and does
+not save either file. Source updates and resizing never expand a card merely
+to fit its content. Scroll offsets are saved with the board and clamped to the
+current content size. Deleting a card never deletes its source heading.
+
+Double-click a card (or use =C-c C-e= on the board) to open a fixed popup
+editor, centered in the parent frame. It is independent of the card's position,
+rotation and zoom: panning the board never moves or hides the popup.
+Inside the editor, =C-c C-e= expands the same Org buffer into an ordinary
+Emacs window, preserving point, undo history and folding. =C-c C-c= or Escape
+closes the editor without saving; edits remain live in the card/source.
+=C-x C-s= explicitly saves the Org source for a reference card, or the board
+for an independent note. Closing is not a discard operation; use Org undo to
+revert edits. Popup editing requires graphical Emacs.
+=C-c C-o= on the board still visits the referenced source heading.
+
+Relationships use ordinary Excalidraw bound arrows, so moving/resizing cards
+keeps their connections. The inherited arrow tools, grouping and directional
+flowchart navigation remain available. Board relationships do not write Org
+links. Board attachments store an absolute local path, not a copy of the file.
+The ordinary =excali-insert-image= command remains available when an embedded
+image rather than a linked media card is wanted.
+
+Missing files/IDs or unsupported references retain the cached preview and show
+an error count in the mode line. Use =excali-board-refresh-all= for details.
+Source paths are absolute local paths in version 1; automatic file relocation,
+remote sources, and watching external disk edits are not supported. Reverting
+or reopening a source buffer reconnects its watches. Modified source text must
+be saved separately before closing Emacs.
+
+** Independent Org cards
+
+Use =C-c C-n= (=excali-board-new-note=) to start a note without creating an
+Org file or heading first. Double-click to edit it. Text updates the card
+live and is stored inside the board's =.excalidraw= file. In this editor,
+=C-x C-s= saves the *board*; =C-c C-c= or Escape closes the editor without
+saving. In a referenced card's editor, =C-x C-s= still saves its Org source.
+
+Select an independent note and use =C-c C-w= (=excali-board-note-to-heading=).
+Choose a local =.org= file (existing or new); no title prompt is needed. Conversion:
+
+- Appends a new top-level heading with an Org ID.
+- Reuses the leading Org heading and its subtree without duplicating the title.
+  Additional root headings become children. Plain notes use the first nonblank
+  line as a title while retaining their body; empty notes use =New note=.
+- Preserves the card's identity, layout, styling and bound connections.
+- Replaces owned text with a normal heading reference.
+- Does not automatically save either file: save Org and board separately.
+
+Close the editor before converting. Failed conversion rolls back the inserted
+Org text and preserves the independent card. Undoing a successful conversion
+in the board restores its independent text, but *never deletes the new Org
+heading*; Org and board have separate undo histories.
+
+** Existing prototype or drawing
+
+Open the scene, then run =M-x excali-board-from-scene=. This explicitly creates
+a *new, unsaved board copy*, preserving shapes, connections and layout, and
+migrates known =excaliOrgPrototype= references. Save to a different filename;
+the copy's save hook rejects overwriting its original file. The original
+drawing/prototype is not converted in place.
+
+The experimental module is no longer required. Prefer a fresh Emacs session
+without loading it when trying the formal mode; already-loaded prototype advice
+does not disappear just because the new module was loaded.
+
+** Format and compatibility
+
+The top-level =excaliBoard= object stores ={ "version": 1 }=. Each Org card
+uses =customData.excaliOrg= with =version=, =scope: "heading"=, =file= and =id=.
+=customData.excaliBoardContent= caches version 1 formatted blocks and the full
+subtree source; =customData.excaliBoardView= stores internal scroll offsets.
+Standard rectangle/text elements provide a short static fallback preview; the
+Org file remains authoritative for referenced cards. Independent cards use
+=customData.excaliBoardNote= with =version: 1= and owned =text=; their board
+file is authoritative until conversion. Unknown document fields are retained by the local
+serializer. Unknown board versions are rejected rather than silently rewritten.
+
+Other Excalidraw editors can display the standard shapes/text, but do not gain
+Org navigation or synchronization. Preservation of extension metadata after
+editing in other applications is *not guaranteed*. Board files contain source
+paths and copied text, including raw subtree properties hidden from the card:
+review them before sharing. PNG/SVG exports from board mode render the rich
+card viewport; other Excalidraw editors display only the fallback shapes/text.
+
+** Implementation sequence
+
+1. [X] Derived mode, versioned document marker and local extension hooks.
+2. [X] Both insertion entry points, source navigation/sync, save/reopen.
+3. [X] Explicit prototype migration and regression tests.
+4. [X] Dedicated Org content renderer, subtree formatting, clipping/scrolling.
+5. [X] In-card source editing, source replacement, local attachments and bound relationships.
+
+** Vault: bounded file discovery
+
+A vault is an ordinary local directory including its subdirectories. Configure
+=excali-board-vaults= once, before creating boards. Each new board automatically stores its matched root as =excaliBoard.vaultRoot=. There is
+no required folder layout and no files are moved or imported. Existing
+boards without a vault continue to work; ordinary drawings are unaffected.
+
+=M-x excali-board-vault-find-file= searches all files recursively through
+completion, showing vault-relative paths so duplicate basenames remain
+distinct. Heading insertion (=C-c C-i=) and attachment insertion (=C-c C-a=)
+use this picker when a vault is configured. Discovery is on demand, not a
+persistent database. VCS directories and =.excali-cache= are excluded;
+directory symlinks are not traversed and file symlinks escaping the root
+are excluded. An unavailable root reports an error rather than searching
+elsewhere. After relocating a vault, update its entry in =excali-board-vaults=
+for future boards. For an existing board, =excali-board-set-vault= explicitly
+repairs its stored root; save the board to persist that change. This command
+is a migration/repair tool, not a routine creation step.
+
+The shared file resolver preserves native Org semantics: ordinary source
+links are relative to their Org file; =attachment:= paths use the source
+heading's Org =DIR= or ID attachment directory, including Org's inheritance
+settings. Independent notes use the vault root for relative file paths.
+These paths also drive reading-state links and inline image previews.
+Setting a vault does not automatically repair old absolute references.
+
+*** Reading-state links and images
+
+Click an underlined link in a card's body to follow it, without opening the
+popup editor. Link hit testing uses the native text layout, including wrapped
+lines, tables, card rotation and internal scrolling. A drag does not activate
+a link; use the card header or other non-link area to move the card. Shift-click
+retains the ordinary selection gesture.
+
+Supported targets are HTTP/HTTPS, local =file:= and =attachment:= links,
+vault-scoped =id:= links and internal Org heading/search links. File links
+open in Emacs without shell file handlers. Unsupported/custom link types,
+including =elisp:= and =shell:=, report an error rather than execute code.
+A stale cached link is checked against the current Org source before opening.
+
+Undescribed local image links such as =[[file:images/diagram.png]]= or
+=[[attachment:diagram.png]]= render directly in the card. Supported formats
+depend on the native image decoders (PNG/JPEG/GIF/WebP/SVG, etc.). Previews
+preserve aspect ratio and fit the body width, with a 320-scene-unit height
+limit. Described image links remain clickable text links. Remote images are
+not downloaded. Missing, unsupported or oversized images show a placeholder.
+
+Org attachment inheritance follows =org-attach-use-inheritance=; a child
+heading does not automatically inherit a parent's =DIR= if Org inheritance
+is disabled. Independent notes resolve relative file links against their vault.
+Use =C-c C-r= to refresh after changing an image file externally. Image bytes
+are held in a session cache, not copied into the board's document; PNG/SVG
+exports include the visible image preview.
+
+*** Repair and reverse references
+
+Run =M-x excali-board-repair-references= in the board after moving an Org
+file or heading. It scans only the current vault for exact Org IDs, including
+unsaved visiting Org buffers. Unique matches update the card's source path,
+not its identity, geometry or connections. Missing or duplicate IDs are
+reported, never guessed. Dirty old sources are not silently detached.
+Save the board separately after repair; Org files are never auto-saved.
+
+At an Org heading, run =M-x excali-board-find-backlinks= and select the vault.
+The results list referencing cards with buttons to open their boards and
+select the cards. Open boards' live state takes precedence over their saved
+files; unopened board documents are also searched. An existing heading ID
+is required; searching never creates one. Malformed board files abort the
+query with an error rather than silently omitting potentially relevant data.
+
+*** External edits and conflicts
+
+While boards are open, one shared two-second timer checks their
+referenced source buffers' visited-file modification times. It does not
+recursively rescan the vault. A clean buffer is safely reverted when its
+file changes, then its cards refresh. Missing files retain cached content
+until repaired. If the buffer has unsaved edits, no revert or merge occurs:
+the card keeps its cached content and the board reports a conflict. Resolve
+the source conflict explicitly, then refresh. The timer stops when the last
+board closes. This uses Emacs modification-time detection, not content hashing.
+
+** Connected cards and named organization
+
+- Double-click an arrow's *free endpoint* to create an independent note there
+  and bind that endpoint to it. Alternatively select the arrow and press
+  =C-c C-j= (=excali-board-note-at-arrow-end=). If both ends are free, the
+  command asks which end to use. Bound endpoints are never silently replaced.
+  The existing arrow, relationship label and opposite binding are preserved.
+  Creation and binding form one undo step; edit the new note using the popup.
+- =M-x excali-board-name-group= names and groups the selected shapes.
+  =M-x excali-board-rename-group= renames the selected group.
+  These use standard =groupIds=; the name lives in each member's
+  =customData.excaliBoardGroups=. Ordinary grouping/ungrouping still works.
+  Group names are navigation labels, not extra visible text on the canvas.
+- =C-c C-t= (=excali-board-create-region=) creates a *visible named region*
+  around the selection, including bound labels and arrows between selected
+  shapes. Regions are standard Excalidraw frames: moving the region moves its
+  contents, and deleting the region releases rather than deletes its cards.
+  Use =M-x excali-rename-frame= to rename it. Regions cannot nest; select the
+  whole group rather than splitting it across regions.
+- =C-c C-v= (=excali-board-goto-organization=) chooses a named group or region,
+  selects it and brings it into view. Names need not be unique: the picker
+  includes IDs to disambiguate them.
+
+These actions only change the board; they never create or modify Org source
+headings. Save the board normally. Other Excalidraw editors retain standard
+groups, frames and bindings but may not display or preserve custom group names.
+
+** Static media cards
+
+Use =C-c C-a= (or =M-x excali-board-insert-media=) to choose a local file;
+with a vault configured, the picker includes its subdirectories. Media cards
+show their type in the header and the filename in the body:
+
+| Type | Reading-state content |
+|------+-----------------------|
+| PDF | First-page preview only |
+| Image | Proportional thumbnail; GIFs remain static |
+| Video | First-frame thumbnail, no playback |
+| Audio | Embedded cover when available; otherwise a type icon and filename |
+
+PDF previews use =pdftoppm= (Poppler); video/audio previews use =ffmpeg=.
+Emacs must find these optional programs through =exec-path=. No dependencies
+are downloaded automatically. Missing tools, missing/corrupt files and absent
+audio covers produce a labeled placeholder rather than blocking the board.
+Preview processes run in the background, at most two per board, with a
+20-second timeout. Closing the board cancels jobs and removes its temporary
+preview files. Native image previews obey =excali-image-max-file-size=.
+
+Cards remain movable, resizable, groupable and connectable. Double-click a
+file/media card, or press =C-c C-f=, to visit the original file in another
+Emacs window. This does not invoke a system player or edit the filename.
+There are no in-card playback controls, PDF page controls or media editing
+tools. Org cards retain their double-click popup editing behavior.
+
+*** Quick example: add and open a file
+
+1. Configure =excali-board-vaults= once as shown above.
+2. Browse an Org file inside that vault in the left pane. Run
+   =excali-board-new= and choose a filename: the board is saved inside the
+   vault and shown on the right. Use =excali-board-open= for an existing board.
+3. Press =C-c C-a= and select a PDF, image, video or audio file. The card shows
+   its type and filename while any background preview is being prepared.
+4. Drag the card to position it. Double-click its body or filename to open
+   the original file in another Emacs window; =C-c C-f= does the same.
+5. Save subsequent board edits with =C-x C-s=. This saves the reference,
+   not a media copy; the Org source is saved separately.
+
+Opening a file uses Emacs's normal file handling and your installed modes,
+not the operating system's default application. Missing files produce an
+error rather than creating a new empty file. Double-clicking an *Org card*
+continues to open its popup editor; use =C-c C-o= to visit its source heading.
+
+*** Persistence and repair
+
+Only the media type and local source path are persisted in =customData=;
+previews are regenerated on reopening and are not embedded in the drawing.
+=C-c C-r= on a selected media card (or with no selection) retries previews;
+=M-x excali-board-media-refresh= also works. Changed files are detected when
+the board renders; there is no separate media-directory watcher. To repair a
+moved/missing source, select the card and run =excali-board-media-relink=.
+This is an explicit replacement: no same-named file is silently substituted.
+Org ID reference repair does not guess media paths.
+
+** Implemented scope (0.3.0)
+
+1. [X] Independent Org cards, fixed popup editing and title-preserving conversion.
+2. [X] Vault selection/persistence, recursive file picker and native attachment
+   path resolution.
+3. [X] Mouse acceptance for endpoint creation and following moved cards;
+   automated binding, conversion, undo/redo and save/reload checks.
+4. [X] Vault-bounded Org ID relocation/repair, reverse board references and
+   external updates with unsaved-buffer conflict protection.
+5. [X] Clickable reading-state Org links and inline local images. No direct
+   checkbox or TODO toggling.
+6. [X] Create-and-connect at an arrow endpoint; named groups/regions.
+7. [X] Typed static media cards: PDF first-page preview, image/video thumbnails,
+   audio filename plus cover or fallback icon. No playback or PDF navigation.
 
 * Org Babel: diagrams in documents
 
@@ -524,6 +946,7 @@ No dark-mode export yet.
   render data.
 - =excali-export.el= — PNG/SVG export and import of embedded scenes.
 - =excali-dsl.el= — Excali DSL model, native drawing, and =excali-dsl-mode=.
+- =excali-board.el= — optional Org board derived mode, references and live previews.
 - =ob-excali.el= — optional Org Babel adapter for SVG, PNG and native scenes.
 - =excali-dsl-parser.el= — lexer, parser, style schema and validation.
 - =excali-dsl-constraints.el= — joint relative-position/container-size solver.

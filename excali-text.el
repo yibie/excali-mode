@@ -547,10 +547,20 @@ MAX-WIDTH.  A non-finite or negative MAX-WIDTH leaves TEXT unwrapped."
   "Return non-nil if ELEMENT is a sticky note."
   (equal (excali--get element 'type) "stickynote"))
 
+(defvar-local excali-text-padding-function nil
+  "Optional function returning bound-text padding for a container.
+Return nil to use the normal Excalidraw padding.  Used by derived modes.")
+
+(defun excali--text-padding (container)
+  "Return the bound-text inset for CONTAINER."
+  (or (and container excali-text-padding-function
+           (funcall excali-text-padding-function container))
+      excali-bound-text-padding))
+
 (defun excali--bound-text-max-width (container &optional text)
   "Return the widest text CONTAINER fits (`getBoundTextMaxWidth')."
   (let ((width (excali--get container 'width))
-        (pad excali-bound-text-padding))
+        (pad (excali--text-padding container)))
     (pcase (excali--get container 'type)
       ("arrow"
        (max (* excali-arrow-label-width-fraction width)
@@ -564,7 +574,7 @@ MAX-WIDTH.  A non-finite or negative MAX-WIDTH leaves TEXT unwrapped."
 (defun excali--bound-text-max-height (container text)
   "Return the tallest TEXT CONTAINER fits (`getBoundTextMaxHeight')."
   (let ((height (excali--get container 'height))
-        (pad excali-bound-text-padding))
+        (pad (excali--text-padding container)))
     (pcase (excali--get container 'type)
       ("stickynote" (max 0 (- height excali-sticky-note-body-inset-y)))
       ("arrow" (if (<= (- height (* pad 8 2)) 0) (excali--get text 'height) height))
@@ -576,7 +586,7 @@ MAX-WIDTH.  A non-finite or negative MAX-WIDTH leaves TEXT unwrapped."
   "Return (X . Y), the top-left of CONTAINER's text box (`getContainerCoords')."
   (let* ((pad (if (excali--sticky-note-p container)
                   excali-sticky-note-padding
-                excali-bound-text-padding))
+                (excali--text-padding container)))
          (w (excali--get container 'width)) (h (excali--get container 'height))
          (ox pad) (oy pad))
     (pcase (excali--get container 'type)
@@ -585,10 +595,11 @@ MAX-WIDTH.  A non-finite or negative MAX-WIDTH leaves TEXT unwrapped."
       ("diamond" (setq ox (+ ox (/ w 4.0)) oy (+ oy (/ h 4.0)))))
     (cons (+ (excali--get container 'x) ox) (+ (excali--get container 'y) oy))))
 
-(defun excali--container-dimension-for-text (dimension type)
+(defun excali--container-dimension-for-text (dimension type &optional container)
   "Return the container size fitting DIMENSION of text in container TYPE.
-Upstream `computeContainerDimensionForBoundText'."
-  (let ((dim (ceiling dimension)) (pad (* 2 excali-bound-text-padding)))
+Upstream `computeContainerDimensionForBoundText'.
+CONTAINER optionally supplies a derived mode's text padding."
+  (let ((dim (ceiling dimension)) (pad (* 2 (excali--text-padding container))))
     (pcase type
       ("ellipse" (round (* (/ (+ dim pad) (sqrt 2)) 2)))
       ("arrow" (+ dim (* pad 8)))
@@ -652,6 +663,9 @@ ANCHOR is `top', `bottom' or `center' (the edge that stays put)."
   (when (hash-table-p excali--native-cache)
     (remhash element excali--native-cache)))
 
+(defvar-local excali-text-layout-function nil
+  "Optional function (CONTAINER TEXT) that returns non-nil when handled.")
+
 (defun excali--redraw-text (text &optional container)
   "Re-wrap, measure and place TEXT (upstream `redrawTextBoundingBox').
 CONTAINER defaults to TEXT's container.  Bound text wraps to the
@@ -659,45 +673,48 @@ container, which grows (never shrinks) to fit; free text with
 `autoResize' false wraps to its width; other text keeps its lines and
 takes the measured width.  Return TEXT."
   (let ((container (or container (excali--container-of text))))
-    (if (and container (excali--sticky-note-p container))
-        (excali--update-sticky-note-layout container text)
-      (pcase-let* ((`(,size ,family ,lh) (excali--text-font text))
-                   (auto (excali--auto-resize-p text))
-                   (original (or (excali--get text 'originalText)
-                                 (excali--get text 'text) ""))
-                   (lines (if (or container (not auto))
-                              (excali--wrap-text
-                               original size family
-                               (if container
-                                   (excali--bound-text-max-width container text)
-                                 (excali--get text 'width)))
-                            (or (excali--get text 'text) "")))
-                   (`(,w . ,h) (excali--measure-string lines size family lh)))
-        (excali--put text 'text lines)
-        (when (or auto (null (excali--get text 'width)))
-          (excali--put text 'width w))
-        (excali--put text 'height h)
-        (when container
-          (excali--put text 'angle (if (excali--arrow-p container)
-                                      0
-                                    (or (excali--get container 'angle) 0)))
-          (let ((changed nil))
-            (when (and (not (excali--arrow-p container))
-                       (> h (excali--bound-text-max-height container text)))
-              (excali--put container 'height
-                          (float (excali--container-dimension-for-text
-                                  h (excali--get container 'type))))
-              (setq changed t))
-            (when (> w (excali--bound-text-max-width container text))
-              (excali--put container 'width
-                          (float (excali--container-dimension-for-text
-                                  w (excali--get container 'type))))
-              (setq changed t))
-            (if changed (excali--touch container) (excali--invalidate-native container)))
-          (pcase-let ((`(,x . ,y) (excali--bound-text-position container text)))
-            (excali--put text 'x x)
-            (excali--put text 'y y)))
-        (excali--touch text))))
+    (if (and container excali-text-layout-function
+             (funcall excali-text-layout-function container text))
+        text
+      (if (and container (excali--sticky-note-p container))
+          (excali--update-sticky-note-layout container text)
+	(pcase-let* ((`(,size ,family ,lh) (excali--text-font text))
+                     (auto (excali--auto-resize-p text))
+                     (original (or (excali--get text 'originalText)
+                                   (excali--get text 'text) ""))
+                     (lines (if (or container (not auto))
+				(excali--wrap-text
+				 original size family
+				 (if container
+                                     (excali--bound-text-max-width container text)
+                                   (excali--get text 'width)))
+                              (or (excali--get text 'text) "")))
+                     (`(,w . ,h) (excali--measure-string lines size family lh)))
+          (excali--put text 'text lines)
+          (when (or auto (null (excali--get text 'width)))
+            (excali--put text 'width w))
+          (excali--put text 'height h)
+          (when container
+            (excali--put text 'angle (if (excali--arrow-p container)
+					 0
+                                       (or (excali--get container 'angle) 0)))
+            (let ((changed nil))
+              (when (and (not (excali--arrow-p container))
+			 (> h (excali--bound-text-max-height container text)))
+		(excali--put container 'height
+                             (float (excali--container-dimension-for-text
+                                     h (excali--get container 'type) container)))
+		(setq changed t))
+              (when (> w (excali--bound-text-max-width container text))
+		(excali--put container 'width
+                             (float (excali--container-dimension-for-text
+                                     w (excali--get container 'type) container)))
+		(setq changed t))
+              (if changed (excali--touch container) (excali--invalidate-native container)))
+            (pcase-let ((`(,x . ,y) (excali--bound-text-position container text)))
+              (excali--put text 'x x)
+              (excali--put text 'y y)))
+          (excali--touch text)))))
   text)
 
 (defun excali--refresh-bound-text (container)
@@ -708,51 +725,56 @@ container change; see also `excali--layout-bound-text' for resizes."
     (excali--redraw-text text container)))
 
 (defun excali--layout-bound-text (container &optional handle keep-aspect
-                                           from-center flip-y)
+                                            from-center flip-y)
   "Refit CONTAINER's bound text after resizing CONTAINER by HANDLE.
 HANDLE is a symbol such as `n', `se' or `e' (nil re-wraps as a corner
 would).  KEEP-ASPECT, FROM-CENTER and FLIP-Y mirror upstream
 `handleBindTextResize': a pure `n'/`s' drag without KEEP-ASPECT keeps
 the lines; otherwise the text is re-wrapped.  If the text no longer fits
 vertically the container grows, anchored at the edge opposite HANDLE."
-  (if (excali--sticky-note-p container)
-      (when-let* ((text (excali--bound-text-of container)))
-        (excali--update-sticky-note-layout container text))
-    (when-let* ((text (excali--bound-text-of container))
-                ((not (string-empty-p (or (excali--get text 'text) "")))))
-      (pcase-let* ((`(,size ,family ,lh) (excali--text-font text))
-                   (lines (excali--get text 'text))
-                   (w (excali--get text 'width)) (h (excali--get text 'height))
-                   (max-w (excali--bound-text-max-width container text))
-                   (max-h (excali--bound-text-max-height container text)))
-        (when (or keep-aspect (not (memq handle '(n s))))
-          (setq lines (excali--wrap-text (or (excali--get text 'originalText) lines)
-                                        size family max-w))
-          (pcase-let ((`(,mw . ,mh) (excali--measure-string lines size family lh)))
-            (setq w mw h mh)))
-        (when (> h max-h)
-          (let* ((height (float (excali--container-dimension-for-text
-                                 h (excali--get container 'type))))
-                 (from-top (not (eq (and (memq handle '(n ne nw)) t)
-                                    (and flip-y t)))))
-            (unless (excali--arrow-p container)
-              (excali--put container 'y
-                          (float (excali--position-after-height-change
-                                  container height
-                                  (cond (from-center 'center)
-                                        (from-top 'bottom)
-                                        (t 'top))))))
-            (excali--put container 'height height)
-            (excali--touch container)))
-        (excali--put text 'text lines)
-        (excali--put text 'width w)
-        (excali--put text 'height h)
-        (unless (excali--arrow-p container)
-          (pcase-let ((`(,x . ,y) (excali--bound-text-position container text)))
-            (excali--put text 'x x)
-            (excali--put text 'y y)))
-        (excali--invalidate-native container)
-        (excali--touch text)))))
+  (if (and excali-text-layout-function
+           (excali--bound-text-of container)
+           (funcall excali-text-layout-function container
+                    (excali--bound-text-of container)))
+      container
+    (if (excali--sticky-note-p container)
+	(when-let* ((text (excali--bound-text-of container)))
+          (excali--update-sticky-note-layout container text))
+      (when-let* ((text (excali--bound-text-of container))
+                  ((not (string-empty-p (or (excali--get text 'text) "")))))
+	(pcase-let* ((`(,size ,family ,lh) (excali--text-font text))
+                     (lines (excali--get text 'text))
+                     (w (excali--get text 'width)) (h (excali--get text 'height))
+                     (max-w (excali--bound-text-max-width container text))
+                     (max-h (excali--bound-text-max-height container text)))
+          (when (or keep-aspect (not (memq handle '(n s))))
+            (setq lines (excali--wrap-text (or (excali--get text 'originalText) lines)
+                                           size family max-w))
+            (pcase-let ((`(,mw . ,mh) (excali--measure-string lines size family lh)))
+              (setq w mw h mh)))
+          (when (> h max-h)
+            (let* ((height (float (excali--container-dimension-for-text
+                                   h (excali--get container 'type) container)))
+                   (from-top (not (eq (and (memq handle '(n ne nw)) t)
+                                      (and flip-y t)))))
+              (unless (excali--arrow-p container)
+		(excali--put container 'y
+                             (float (excali--position-after-height-change
+                                     container height
+                                     (cond (from-center 'center)
+                                           (from-top 'bottom)
+                                           (t 'top))))))
+              (excali--put container 'height height)
+              (excali--touch container)))
+          (excali--put text 'text lines)
+          (excali--put text 'width w)
+          (excali--put text 'height h)
+          (unless (excali--arrow-p container)
+            (pcase-let ((`(,x . ,y) (excali--bound-text-position container text)))
+              (excali--put text 'x x)
+              (excali--put text 'y y)))
+          (excali--invalidate-native container)
+          (excali--touch text))))))
 
 ;;;; Arrow labels (linearElementEditor.ts)
 

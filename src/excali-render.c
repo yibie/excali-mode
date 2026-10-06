@@ -7,6 +7,7 @@
  * Cairo paths the way roughjs' canvas renderer does.
  */
 
+#include "excali-board.h"
 #include "excali-render.h"
 #include "excali-frame.h"
 #include "excali-image.h"
@@ -266,6 +267,7 @@ static void draw_element(cairo_t *cr, const ExcaliElement *e,
 		if (has_stroke)
 			fill_outline(cr, &shape.outline, &stroke);
 		excali_shape_free(&shape);
+                excali_board_draw(cr, e);
 	} else if (e->type == EXCALI_STICKYNOTE) {
 		cairo_translate(cr, e->x, e->y);
 		excali_draw_sticky(cr, e, has_fill,

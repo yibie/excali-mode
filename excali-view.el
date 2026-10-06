@@ -36,6 +36,9 @@
         (cl-incf i 2))
       flat)))
 
+(defvar-local excali-native-element-function nil
+  "Optional function called with an element and its native vector.")
+
 (defun excali--native-element (element)
   "Return the cached native vector for ELEMENT."
   (let ((native
@@ -72,7 +75,9 @@
     (when (fboundp 'excali--erase-opacity-for)
       ;; Elements marked by the eraser fade; recomputed every frame.
       (aset native 15 (excali--erase-opacity-for element (excali--get element 'opacity))))
-    native))
+    (if excali-native-element-function
+        (funcall excali-native-element-function element native)
+      native)))
 
 (defun excali--native-shape-extras (element)
   "Return extra shape rendering properties of ELEMENT for the module.
@@ -341,6 +346,18 @@ Mouse events act where they happen, other input in the selected window."
                    (selected-window))))
     (and (window-live-p window) (eq (window-buffer window) (current-buffer))
          window)))
+
+(defun excali--select-event-view (event)
+  "Activate the canvas window receiving EVENT before reading buffer state.
+Mouse key lookup can find a non-selected window's map without switching
+the current buffer.  Its buffer-local pre-command hook has not run."
+  (let ((window (posn-window (event-start event))))
+    (when (and (window-live-p window)
+               (with-current-buffer (window-buffer window)
+                 (derived-mode-p 'excali-mode)))
+      (select-window window)
+      (set-buffer (window-buffer window))
+      (excali--use-view window))))
 
 (defun excali--select-view ()
   "Before a command, give it the view of the window it acts in.
