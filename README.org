@@ -32,6 +32,8 @@ the card back to its source.
 also shows labelled arrows between cards, named regions and file cards.
 The details are under Org boards below.
 
+The video is also included at [[file:demo/excali-v0.3.0.mp4][demo/excali-v0.3.0.mp4]].
+
 * 0.2.0 demo: placement, styling and Org
 
 [[https://github.com/yibie/excali-mode/releases/download/v0.2.0/excali-mode-v0.2.0-demo.mp4][Watch the 45-second demo]] (1080p, English captions, no audio).
