@@ -1,4 +1,5 @@
 These .edsl files are examples from excalidraw-dsl
 (https://github.com/tyrchen/excalidraw-dsl, examples/), copied unchanged
-under its MIT license; see THIRD-PARTY-NOTICES.  test/excali-dsl-test.el
-draws every one of them.
+under its MIT license; see THIRD-PARTY-NOTICES.  excali-mode read this
+language through 0.1.x; since 0.2.0 it has been replaced by Excali DSL
+(.excalidsl), and the tests no longer draw these files.

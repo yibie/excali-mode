@@ -19,9 +19,9 @@ perfect-freehand 1.2.0 (https://github.com/steveruizok/perfect-freehand)
   Pressure-sensitive freedraw outlines.  Ported in src/excali-freehand.c.
 
 excalidraw-dsl (https://github.com/tyrchen/excalidraw-dsl)
-  The .edsl diagram language that excali-dsl.el reads (an independent
-  implementation), and the example files in test/fixtures/edsl/, copied
-  unchanged.
+  The .edsl diagram language that excali-dsl.el read through 0.1.x (an
+  independent implementation), replaced by Excali DSL in 0.2.0, and the
+  example files still kept in test/fixtures/edsl/, copied unchanged.
 
 fractional-indexing (https://github.com/rocicorp/fractional-indexing)
   Order-key generation, dedicated to the public domain under CC0 1.0 by

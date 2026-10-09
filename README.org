@@ -10,8 +10,27 @@ the scene and every editing command; a small C module draws it with
 Cairo and Pango straight into the pixel buffer of Emacs 32's new
 =canvas= image type.
 
-It is an unofficial port, not affiliated with the Excalidraw project,
-and it needs Emacs 32 (master) — the first Emacs with the canvas API.
+Two things are built on top of the drawing: *Org boards*, a whiteboard
+whose cards are Org headings that stay in their own files (in the spirit
+of Obsidian Canvas, for Org), and *Excali DSL*, diagrams written as text,
+also as Org Babel blocks.
+
+It is an unofficial port, not affiliated with the Excalidraw project.
+There is no browser or webview in it.  It needs Emacs 32 (master) — the
+first Emacs with the canvas API — and a C compiler to build the module;
+see Requirements below.
+
+* Org boards (0.3.0)
+
+#+html: <p align="center"><img src="hero/board.gif" alt="An Org heading placed on a board as a card; editing the heading in its file updates the card" width="800"></p>
+
+=excali-board-mode= puts Org headings on a board as cards.  A heading
+stays in its Org file: edit it there and the card follows, or jump from
+the card back to its source.
+
+[[https://github.com/yibie/excali-mode/releases/download/v0.3.0/excali-mode-v0.3.0-org-boards-demo.mp4][Watch the full 45-second demo]] (1080p, English captions, no audio), which
+also shows labelled arrows between cards, named regions and file cards.
+The details are under Org boards below.
 
 * 0.2.0 demo: placement, styling and Org
 
@@ -42,20 +61,54 @@ The video is also included at [[file:demo/excali-v0.2.0.mp4][demo/excali-v0.2.0.
   scene embedded so Excalidraw can open the export again.
 - Diagrams from text: *Excali DSL* (=.excalidsl=), with readable relative
   placement, dotted containers, explicit style blocks, and editable bound arrows.
+- *Org boards* (=excali-board-mode=): Org headings as cards that show
+  their subtree and follow edits to the source file, independent Org
+  notes, labelled arrows between cards, named groups and regions, and
+  static previews of PDF, image, video and audio files.  Boards are saved
+  as =.excalidraw= files.
 - Smooth on large scenes: only damaged areas repaint, panning reuses
   pixels, zooming shows an instant preview, and on macOS a CoreAnimation
   layer bypasses Emacs's image refresh.
 
+* Requirements
+
+- Emacs 32 (master) built with module support and the =canvas= image
+  type.  To check, evaluate this in a graphical Emacs (=M-:=); it should
+  return =t=:
+
+  #+begin_src emacs-lisp
+  (and (fboundp 'module-load)
+       (fboundp 'canvas-refresh)
+       (image-type-available-p 'canvas))
+  #+end_src
+
+- GNU make, pkg-config, a C11 compiler, cairo, pangocairo and zlib.  The
+  packages for each platform are listed under Platforms.
+- Optional, for PDF and video/audio previews on Org boards: Poppler
+  (=pdftoppm=) and FFmpeg.
+
+What has been run: excali-mode is developed and used on macOS (Apple
+silicon) with Homebrew's =emacs-plus@32=; the build last tested against
+is from 2026-09-10.  That is a tested configuration, not a minimum
+version.  On Linux and Windows the sources compile, but the author has
+not run them there.  One user reported 0.1.1 working with an =.so= build
+on Emacs 31 plus the canvas patch (see With elpaca).
+
 * Installation
 
-excali-mode is not on MELPA yet.  Build it from a clone:
+excali-mode is not on MELPA yet.  Build it from a clone and try it:
 
 #+begin_src shell
 git clone https://github.com/yibie/excali-mode.git
 cd excali-mode
 make            # the C module and the byte-compiled Lisp; see Platforms
 make fonts      # optional but recommended: Excalidraw's fonts (network)
+make try        # opens the sample drawing in a separate Emacs started with -Q
 #+end_src
+
+=make try= does not touch your configuration.  Without =make fonts= text
+falls back to system fonts, so drawings do not look like the pictures
+above and text wraps differently from the web app.
 
 Run =make= again after pulling: excali loaded from uncompiled =.el= files
 runs several times slower, which large scenes feel.  Emacs picks the
@@ -203,8 +256,11 @@ checked: the full build and =make test= on macOS; the non-macOS
 configuration (=make PLATFORM=unix=, no CoreAnimation or CoreText) built
 with GCC and passing =make test= on macOS; every source compiling
 cleanly for x86_64 glibc, aarch64 musl and x86_64 mingw-w64 (=zig cc=
-with those libcs' headers).  Not yet run on Linux or Windows: linking
-there, the GUI, and on Windows whether Pango sees GDI-registered fonts.
+with those libcs' headers).  Not yet run by the author on Linux or
+Windows: linking there, the GUI, and on Windows whether Pango sees
+GDI-registered fonts.  One user reported 0.1.1 working with an =.so=
+build on Emacs 31 plus the canvas patch (see With elpaca); reports from
+other setups are welcome.
 
 * Keys
 
@@ -870,6 +926,50 @@ libraries open at once.  The index is fetched from
 button hands to excalidraw.com) and cached in
 =excali-library-official-cache=.
 
+** Storage configuration
+
+Library storage paths are customizable (including in v0.2.0). The defaults
+below are relative to =user-emacs-directory=, commonly =~/.emacs.d/= or
+=~/.config/emacs/=:
+
+| Variable | Default relative path | Contents |
+|----------+-----------------------+----------|
+| =excali-library-file= | =excali/library.excalidrawlib= | Personal element library; preserve or back up |
+| =excali-library-thumbnail-directory= | =excali/thumbnails/= | Generated PNG thumbnails; can be regenerated |
+| =excali-library-official-cache= | =excali/official-libraries.json= | Downloaded official collection index; can be fetched again |
+
+To keep this data outside your Emacs configuration directory, put the following
+in your init file, before first using the library (or in your =use-package=
+=:init= section). These are example locations, not additional dependencies:
+
+#+begin_src emacs-lisp
+(setq excali-library-file
+      (expand-file-name "~/.local/share/excali/library.excalidrawlib")
+      excali-library-thumbnail-directory
+      (expand-file-name "~/.cache/excali/thumbnails/")
+      excali-library-official-cache
+      (expand-file-name "~/.cache/excali/official-libraries.json"))
+#+end_src
+
+To disable thumbnail caching on disk instead, set:
+
+#+begin_src emacs-lisp
+(setq excali-library-thumbnail-directory nil)
+#+end_src
+
+Thumbnails are then kept in memory for the session and rendered again when
+needed in a later session. This setting does not delete existing thumbnails.
+
+*Changing paths does not migrate existing files.* Before restarting Emacs
+with the new settings, back up and copy or move the existing
+=library.excalidrawlib= to the new location (create its parent directory if
+needed). Do not overwrite another library already at that destination; use
+=excali-library-import= to merge libraries instead. The library is user data,
+not a disposable cache. Old thumbnails and the downloaded index can be removed
+once Emacs is no longer using the old paths; they will be regenerated or
+downloaded as needed. Restart after changing paths if the library has already
+been used, since its contents are also cached in memory.
+
 * Images, frames and export
 
 Images show =files[fileId].dataURL=; each file is decoded once per
@@ -963,7 +1063,11 @@ rather than on the canvas.  Rough strokes resemble but do not match the
 web renderer pixel for pixel.  Without =make fonts=, text uses system
 fallback fonts, so widths and wrapping differ from the web app.  Native
 pointer shapes need macOS; elsewhere the nearest Emacs =pointer= shape
-stands in.  Linux and Windows builds are cross-compiled but not run.
+stands in.  A stylus draws as a mouse does: pen pressure is not read,
+and freedraw strokes use simulated pressure.  Excali DSL is one-way:
+regenerating from the source replaces manual changes on the canvas.
+Linux and Windows builds are cross-compiled but not run by the author;
+see Platforms.
 
 * Changes
 
