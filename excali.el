@@ -67,14 +67,22 @@
 ;; bound with the super modifier, which is Cmd in the NS port; the
 ;; familiar Emacs keys (C-/, M-w, C-y, C-x C-s, ...) work as well.
 
-(defmacro excali--tool-command (tool)
-  "Return a command selecting TOOL."
-  `(lambda ()
-     ,(format "Select the %s tool." tool)
-     (interactive)
-     (excali-select-tool ',tool)
-     (message "Tool: %s" excali--tool)))
+;; Named commands, so `describe-mode', \[describe-key] and which-key show
+;; what a tool key does instead of an anonymous function.
+(defmacro excali--define-tool-commands (&rest tools)
+  "Define a command `excali-tool-TOOL' selecting each of TOOLS."
+  `(progn
+     ,@(mapcar (lambda (tool)
+                 `(defun ,(intern (format "excali-tool-%s" tool)) ()
+                    ,(format "Select the %s tool." tool)
+                    (interactive)
+                    (excali-select-tool ',tool)
+                    (message "Tool: %s" excali--tool)))
+               tools)))
 
+(excali--define-tool-commands
+ hand select rectangle diamond ellipse arrow line freedraw text eraser
+ frame stickynote laser bucketfill autoshape)
 
 (defun excali-return ()
   "Finish drawing points, edit the selected line's points, or edit text."
@@ -124,23 +132,23 @@ or deselect."
   "C-<wheel-up>" #'excali-wheel "C-<wheel-down>" #'excali-wheel
   "<pinch>" #'excali-pinch
   ;; Tools.
-  "h" (excali--tool-command hand)
-  "v" (excali--tool-command select) "1" (excali--tool-command select)
-  "r" (excali--tool-command rectangle) "2" (excali--tool-command rectangle)
-  "d" (excali--tool-command diamond) "3" (excali--tool-command diamond)
-  "o" (excali--tool-command ellipse) "4" (excali--tool-command ellipse)
-  "a" (excali--tool-command arrow) "5" (excali--tool-command arrow)
-  "l" (excali--tool-command line) "6" (excali--tool-command line)
-  "p" (excali--tool-command freedraw) "x" (excali--tool-command freedraw)
-  "7" (excali--tool-command freedraw)
-  "t" (excali--tool-command text) "8" (excali--tool-command text)
-  "e" (excali--tool-command eraser) "0" (excali--tool-command eraser)
-  "f" (excali--tool-command frame)
-  "n" (excali--tool-command stickynote)
+  "h" #'excali-tool-hand
+  "v" #'excali-tool-select "1" #'excali-tool-select
+  "r" #'excali-tool-rectangle "2" #'excali-tool-rectangle
+  "d" #'excali-tool-diamond "3" #'excali-tool-diamond
+  "o" #'excali-tool-ellipse "4" #'excali-tool-ellipse
+  "a" #'excali-tool-arrow "5" #'excali-tool-arrow
+  "l" #'excali-tool-line "6" #'excali-tool-line
+  "p" #'excali-tool-freedraw "x" #'excali-tool-freedraw
+  "7" #'excali-tool-freedraw
+  "t" #'excali-tool-text "8" #'excali-tool-text
+  "e" #'excali-tool-eraser "0" #'excali-tool-eraser
+  "f" #'excali-tool-frame
+  "n" #'excali-tool-stickynote
   "9" #'excali-insert-image
-  "k" (excali--tool-command laser)
-  "b" (excali--tool-command bucketfill)
-  "X" (excali--tool-command autoshape)
+  "k" #'excali-tool-laser
+  "b" #'excali-tool-bucketfill
+  "X" #'excali-tool-autoshape
   "i" #'excali-eyedropper "G" #'excali-eyedropper "S" #'excali-eyedropper-stroke
   "q" #'excali-toggle-tool-lock
   ;; Style.

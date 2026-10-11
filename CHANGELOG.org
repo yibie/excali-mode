@@ -1,5 +1,14 @@
 #+title: Changelog
 
+* Unreleased
+
+** Fixed
+
+- Tool keys in =excali-mode-map= (=h=, =v=, =r=, ... and their digits) are
+  bound to named commands =excali-tool-hand=, =excali-tool-select=, ... instead
+  of anonymous functions, so which-key, =describe-mode= and =C-h k= show what
+  they do, and they can be called with =M-x= or rebound (#1).
+
 * 0.3.0 — 2026-10-05
 
 ** New
