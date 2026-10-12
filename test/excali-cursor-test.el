@@ -251,6 +251,32 @@ event position, and `read-key-sequence' turns it into a prefix key."
       ;; Such events still give window coordinates.
       (should (equal (excali--event-window-xy (list 'down-mouse-1 posn)) '(30 . 40))))))
 
+(ert-deftest excali-cursor-test-window-edge-clicks-keep-their-prefix ()
+  "A click on the window's vertical border is not the canvas's.
+Emacs gives it the hot spot's id all the same; its position, relative to
+the whole window, tells it apart, and its own prefix key is restored."
+  (excali-cursor-test--with-rect _rect
+    (excali-mode)
+    (save-window-excursion
+      (delete-other-windows)
+      (set-window-buffer (selected-window) (current-buffer))
+      (split-window-right)
+      (let* ((window (selected-window))
+             (posn (lambda (x)
+                     (list window 'excali-canvas (cons x 2) 0 nil 1 '(0 . 0) nil
+                           (cons x 2) '(1 . 1))))
+             (border (funcall posn (1- (window-pixel-width window))))
+             (canvas (funcall posn 3)))
+        (should (eq (excali--edge-area border) 'vertical-line))
+        (should-not (excali--edge-area canvas))
+        (should-not (excali--edge-area (list window nil '(3 . 2) 0)))
+        (put 'down-mouse-1 'event-kind 'mouse-click)
+        (dolist (case `((,border . [vertical-line down-mouse-1])
+                        (,canvas . [excali-canvas down-mouse-1])))
+          (let* ((unread-command-events (list (list 'down-mouse-1 (car case))))
+                 (keys (read-key-sequence nil)))
+            (should (equal (vector (aref keys 0) (car (aref keys 1))) (cdr case)))))))))
+
 (ert-deftest excali-cursor-test-update-sets-map-in-place ()
   "The map goes into each surface's spec in place, translated, only on change."
   (excali-cursor-test--with-rect _rect

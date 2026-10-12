@@ -786,7 +786,7 @@ WINDOW defaults to the window of the current view, else the selected one."
         (setq excali--view-stamp (excali--scene-stamp))
         (excali--update-pointer t)))))
 
-(defun excali--window-size-change (frame)
+(defun excali--sync-frame-views (frame)
   "Resize the views of excali buffers shown on FRAME; drop gone ones."
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
@@ -795,6 +795,27 @@ WINDOW defaults to the window of the current view, else the selected one."
         (dolist (window (excali--view-windows))
           (when (eq (window-frame window) frame)
             (excali--sync-canvas window)))))))
+
+(defvar excali--resized-frames nil
+  "Frames whose views `excali--sync-resized-frames' is about to resize.")
+
+(defun excali--sync-resized-frames ()
+  "Resize the views on the frames that changed since the last redisplay."
+  (let ((frames excali--resized-frames))
+    (setq excali--resized-frames nil)
+    (dolist (frame frames)
+      (when (frame-live-p frame)
+        (excali--sync-frame-views frame)))))
+
+(defun excali--window-size-change (frame)
+  "Resize the views of excali buffers shown on FRAME once redisplay is over.
+This runs inside redisplay, and `excali--sync-canvas' redisplays to get
+its surfaces shown: doing that here would end the user's resizing of
+FRAME by its edges on macOS after one step."
+  (unless excali--resized-frames
+    (run-with-timer 0 nil #'excali--sync-resized-frames))
+  (unless (memq frame excali--resized-frames)
+    (push frame excali--resized-frames)))
 
 (defun excali-cycle-backend ()
   "Switch to the next presentation backend."
@@ -882,6 +903,30 @@ which `excali--plan-repaint' detects by itself."
 (defun excali--canvas-area-p (posn)
   "Return non-nil if POSN is over the canvas: the text area or a hot spot."
   (memq (posn-area posn) '(nil excali-canvas)))
+
+(defun excali--edge-area (posn)
+  "Return the window edge POSN is really on, or nil if it is on the canvas.
+For a click on the vertical border or the right divider, Emacs still
+looks up the image beside it, and a hot spot there replaces the area of
+the position with its id.  Geometry tells the two apart: the
+coordinates of such a click are relative to the whole window, and no
+point of the text area taken that way reaches those edges."
+  (let ((window (posn-window posn))
+        (xy (posn-x-y posn)))
+    (when (and (eq (posn-area posn) 'excali-canvas) (window-live-p window)
+               (numberp (car-safe xy)) (numberp (cdr-safe xy)))
+      (let* ((frame (window-frame window))
+             (edges (window-pixel-edges window))
+             (border (frame-internal-border-width frame))
+             ;; `coordinates-in-window-p' counts in canonical characters
+             ;; from inside the frame's border, truncating to pixels.
+             (part (coordinates-in-window-p
+                    (cons (/ (+ (nth 0 edges) (car xy) (- border) 0.5)
+                             (frame-char-width frame))
+                          (/ (+ (nth 1 edges) (cdr xy) (- border) 0.5)
+                             (frame-char-height frame)))
+                    window)))
+        (car (memq part '(vertical-line right-divider)))))))
 
 (defun excali--event-window-xy (event)
   "Return EVENT's position relative to the view's window's text area.

@@ -8,6 +8,13 @@
   bound to named commands =excali-tool-hand=, =excali-tool-select=, ... instead
   of anonymous functions, so which-key, =describe-mode= and =C-h k= show what
   they do, and they can be called with =M-x= or rebound (#1).
+- A window showing a canvas can be resized by dragging its right edge (the
+  vertical border, or the right divider of =window-divider-mode=) again.
+  Emacs reported those clicks as clicks on the canvas, which drew or selected
+  instead (#2).
+- On macOS, a frame showing a canvas can be resized by dragging its edges
+  again.  The view was resized, and redisplayed, from inside the redisplay
+  that reported the new size, which ended the drag after one step (#2).
 
 * 0.3.0 — 2026-10-05
 

@@ -223,6 +223,16 @@ or deselect."
   (define-key canvas [t] #'ignore)
   (define-key excali-mode-map [excali-canvas] canvas))
 
+;; Clicks on a canvas window's vertical border and right divider get that
+;; prefix too (`excali--edge-area').  Give them back their own, so that
+;; the window can still be resized by dragging them.
+(define-key key-translation-map [excali-canvas]
+            (lambda (_prompt)
+              (when-let* ((event last-input-event)
+                          ((consp event)) ((consp (cdr event))) ((consp (cadr event)))
+                          (area (excali--edge-area (event-start event))))
+                (vector area))))
+
 (define-derived-mode excali-mode special-mode "Excali"
   "Major mode for editing Excalidraw scenes on a Canvas image."
   (setq-local cursor-type nil

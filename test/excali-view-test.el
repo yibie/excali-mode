@@ -129,7 +129,7 @@ The tiles backend is used; both views are synced."
   (excali-view-test--two-windows w1 w2 _rect
     (let ((overlay (excali--view-value w2 'excali--view-overlay)))
       (delete-window w2)
-      (excali--window-size-change (selected-frame))
+      (excali--sync-frame-views (selected-frame))
       (should-not (overlay-buffer overlay))
       (should (= (length (overlays-in (point-min) (point-max))) 1))
       (should-not (memq w2 (excali--other-views)))
@@ -146,10 +146,28 @@ The tiles backend is used; both views are synced."
     (excali--use-view w1)
     (select-window w2)
     (delete-window w1)
-    (excali--window-size-change (selected-frame))
+    (excali--sync-frame-views (selected-frame))
     (should (eq excali--view-window w2))
     (should (= excali--zoom 3.0))
     (should (null (excali--other-views)))))
+
+(ert-deftest excali-view-test-size-change-syncs-after-redisplay ()
+  "The size change hook leaves the views alone and resizes them from a timer."
+  (excali-view-test--two-windows w1 _w2 _rect
+    (let ((frame (selected-frame))
+          (size excali--canvas-size)
+          (timer-list nil)
+          (excali--resized-frames nil))
+      (excali--with-view w1
+        (setq excali--canvas-size nil))
+      (excali--window-size-change frame)
+      (excali--window-size-change frame)
+      (should-not (excali--view-value w1 'excali--canvas-size))
+      (should (equal excali--resized-frames (list frame)))
+      (should (= (length timer-list) 1))
+      (timer-event-handler (car timer-list))
+      (should-not excali--resized-frames)
+      (should (equal (excali--view-value w1 'excali--canvas-size) size)))))
 
 (ert-deftest excali-view-test-single-window-adopts-buffer-state ()
   "The first window's view is the buffer's state as it was."
