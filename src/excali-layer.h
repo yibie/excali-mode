@@ -9,14 +9,17 @@
 #include <stdint.h>
 
 /* The Emacs view (an unretained NSView *) whose screen rectangle (top-left
-   origin, points) best matches LEFT TOP WIDTH HEIGHT, or NULL.  */
+   origin, points) best matches LEFT TOP WIDTH HEIGHT, or NULL.  Frames
+   can share a rectangle (stacked frames, native tabs): among equal
+   matches prefer the window titled TITLE (may be NULL), then the key
+   window.  */
 void *excali_find_emacs_view(double left, double top, double width,
-                            double height);
+                            double height, const char *title);
 
-/* Attach an overlay to the Emacs view whose screen rectangle (top-left
-   origin, points) best matches LEFT TOP WIDTH HEIGHT.  */
+/* Attach an overlay to the Emacs view found as by
+   `excali_find_emacs_view'.  */
 void *excali_layer_create(double left, double top, double width,
-                         double height);
+                         double height, const char *title);
 
 /* Place LAYER at X Y WIDTH HEIGHT in view points, top-left origin.  */
 void excali_layer_set_geometry(void *layer, double x, double y, double width,

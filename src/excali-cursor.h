@@ -7,10 +7,10 @@
 
 #include <stdbool.h>
 
-/* Add a cursor view to the Emacs view whose screen rectangle (top-left
-   origin, points) best matches LEFT TOP WIDTH HEIGHT.  Hidden at first.  */
+/* Add a cursor view to the Emacs view found as by
+   `excali_find_emacs_view'.  Hidden at first.  */
 void *excali_cursor_view_create(double left, double top, double width,
-                               double height);
+                               double height, const char *title);
 
 /* Place VIEW at X Y WIDTH HEIGHT in Emacs view points, top-left origin.  */
 void excali_cursor_view_set_geometry(void *view, double x, double y,

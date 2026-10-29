@@ -94,11 +94,13 @@ static NSView *find_emacs_view(NSView *root)
 }
 
 void *excali_find_emacs_view(double left, double top, double width,
-                            double height)
+                            double height, const char *title)
 {
 	CGFloat screen_height = NSScreen.screens.firstObject.frame.size.height;
+	NSString *wanted = title ? [NSString stringWithUTF8String:title] : nil;
 	NSView *best = nil;
 	double best_distance = 1e18;
+	int best_rank = 0;
 	for (NSWindow *window in NSApp.windows) {
 		NSView *view = find_emacs_view(window.contentView);
 		if (!view || !view.layer)
@@ -109,8 +111,13 @@ void *excali_find_emacs_view(double left, double top, double width,
 		double view_top = screen_height - NSMaxY(r);
 		double d = fabs(NSMinX(r) - left) + fabs(view_top - top) +
 		           fabs(NSWidth(r) - width) + fabs(NSHeight(r) - height);
-		if (d < best_distance) {
+		/* Break ties between frames at the same place.  */
+		int rank = (wanted && [window.title isEqualToString:wanted]) * 2 +
+		           window.isKeyWindow;
+		if (d < best_distance ||
+		    (d == best_distance && rank > best_rank)) {
 			best_distance = d;
+			best_rank = rank;
 			best = view;
 		}
 	}
@@ -118,10 +125,10 @@ void *excali_find_emacs_view(double left, double top, double width,
 }
 
 void *excali_layer_create(double left, double top, double width,
-                         double height)
+                         double height, const char *title)
 {
 	NSView *best = (__bridge NSView *)excali_find_emacs_view(left, top, width,
-	                                                        height);
+	                                                        height, title);
 	if (!best)
 		return NULL;
 	ExcaliOverlay *overlay = [ExcaliOverlay new];

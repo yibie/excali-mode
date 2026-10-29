@@ -498,7 +498,8 @@ spec, so Emacs picks it up at the next mouse motion without a redisplay."
       (pcase-let ((`(,left ,top ,right ,bottom)
                    (frame-edges (window-frame window) 'native-edges)))
         (setq excali--cursor-view (excali-native-cursor-view-create
-                                  left top (- right left) (- bottom top)))))
+                                  left top (- right left) (- bottom top)
+                                  (frame-parameter (window-frame window) 'name)))))
     (when excali--cursor-view
       (pcase-let ((`(,x ,y . ,_) (window-inside-pixel-edges window)))
         (excali-native-cursor-view-set-geometry excali--cursor-view x y width height t))

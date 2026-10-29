@@ -701,7 +701,8 @@ separated by newlines."
     (pcase-let ((`(,left ,top ,right ,bottom)
                  (frame-edges (window-frame window) 'native-edges)))
       (setq excali--layer (excali-native-layer-create
-                          left top (- right left) (- bottom top))))
+                          left top (- right left) (- bottom top)
+                          (frame-parameter (window-frame window) 'name))))
     (unless excali--layer
       (error "No Emacs view found for the overlay layer")))
   (pcase-let ((`(,x ,y . ,_) (window-inside-pixel-edges window)))

@@ -245,10 +245,10 @@ static NSCursor *cursor_named(const char *name)
 @end
 
 void *excali_cursor_view_create(double left, double top, double width,
-                               double height)
+                               double height, const char *title)
 {
-	NSView *emacs = (__bridge NSView *)excali_find_emacs_view(left, top,
-	                                                         width, height);
+	NSView *emacs = (__bridge NSView *)excali_find_emacs_view(
+	        left, top, width, height, title);
 	if (!emacs)
 		return NULL;
 	ExcaliCursorView *view =

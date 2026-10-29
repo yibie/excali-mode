@@ -851,15 +851,17 @@ static void *get_layer(emacs_env *env, emacs_value value)
 	return env->get_user_ptr(env, value);
 }
 
-/* (excali-native-layer-create LEFT TOP WIDTH HEIGHT) */
+/* (excali-native-layer-create LEFT TOP WIDTH HEIGHT &optional TITLE) */
 static emacs_value Fexcali_native_layer_create(emacs_env *env, ptrdiff_t nargs,
                                               emacs_value *args, void *data)
 {
-	(void)nargs;
 	(void)data;
+	char *title = nargs > 4 ? get_string(env, args[4]) : NULL;
 	void *layer = excali_layer_create(
 	        get_number(env, args[0], 0), get_number(env, args[1], 0),
-	        get_number(env, args[2], 0), get_number(env, args[3], 0));
+	        get_number(env, args[2], 0), get_number(env, args[3], 0),
+	        title);
+	free(title);
 	return layer ? env->make_user_ptr(env, excali_layer_destroy, layer)
 	             : Qnil;
 }
@@ -926,11 +928,13 @@ static emacs_value Fexcali_native_cursor_view_create(emacs_env *env,
                                                     emacs_value *args,
                                                     void *data)
 {
-	(void)nargs;
 	(void)data;
+	char *title = nargs > 4 ? get_string(env, args[4]) : NULL;
 	void *view = excali_cursor_view_create(
 	        get_number(env, args[0], 0), get_number(env, args[1], 0),
-	        get_number(env, args[2], 0), get_number(env, args[3], 0));
+	        get_number(env, args[2], 0), get_number(env, args[3], 0),
+	        title);
+	free(title);
 	return view ? env->make_user_ptr(env, excali_cursor_view_destroy, view)
 	            : Qnil;
 }
@@ -1735,11 +1739,13 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "Sizes are screen pixels at the 14px label font.\n\n"
 	     "(fn TITLE MAX-WIDTH)");
 #ifdef EXCALI_HAVE_LAYER
-	bind(env, "excali-native-layer-create", Fexcali_native_layer_create, 4,
-	     "Attach an overlay layer to the Emacs view at screen rectangle.\n\n"
-	     "LEFT, TOP, WIDTH and HEIGHT are the frame's native edges in\n"
-	     "screen pixels.  Return nil when no view matches.\n\n"
-	     "(fn LEFT TOP WIDTH HEIGHT)");
+	bind_range(env, "excali-native-layer-create",
+	           Fexcali_native_layer_create, 4, 5,
+	           "Attach an overlay layer to the Emacs view at screen rectangle.\n\n"
+	           "LEFT, TOP, WIDTH and HEIGHT are the frame's native edges in\n"
+	           "screen pixels.  TITLE, the frame's title, picks between\n"
+	           "frames at the same place.  Return nil when no view matches.\n\n"
+	           "(fn LEFT TOP WIDTH HEIGHT &optional TITLE)");
 	bind(env, "excali-native-layer-set-geometry",
 	     Fexcali_native_layer_set_geometry, 7,
 	     "Place LAYER at view rectangle X Y WIDTH HEIGHT.\n\n"
@@ -1748,11 +1754,11 @@ int emacs_module_init(struct emacs_runtime *runtime)
 	     "Show FB's pixels in LAYER.\n\n(fn LAYER FB)");
 	bind(env, "excali-native-layer-flush", Fexcali_native_layer_flush, 0,
 	     "Commit pending CoreAnimation changes.\n\n(fn)");
-	bind(env, "excali-native-cursor-view-create",
-	     Fexcali_native_cursor_view_create, 4,
-	     "Add a hidden cursor view to the Emacs view at screen rectangle.\n\n"
-	     "Arguments are as for `excali-native-layer-create'.\n\n"
-	     "(fn LEFT TOP WIDTH HEIGHT)");
+	bind_range(env, "excali-native-cursor-view-create",
+	           Fexcali_native_cursor_view_create, 4, 5,
+	           "Add a hidden cursor view to the Emacs view at screen rectangle.\n\n"
+	           "Arguments are as for `excali-native-layer-create'.\n\n"
+	           "(fn LEFT TOP WIDTH HEIGHT &optional TITLE)");
 	bind(env, "excali-native-cursor-view-set-geometry",
 	     Fexcali_native_cursor_view_set_geometry, 6,
 	     "Place cursor VIEW at view rectangle X Y WIDTH HEIGHT.\n\n"
