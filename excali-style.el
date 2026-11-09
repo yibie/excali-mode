@@ -248,8 +248,10 @@ Freedraw strokes use a thinner scale (`FREEDRAW_STROKE_WIDTH')."
   (excali--touch element))
 
 (defconst excali--text-style-properties
-  '(fontFamily fontSize textAlign verticalAlign)
-  "Properties that a selected shape passes on to its label.")
+  '(strokeColor fontFamily fontSize textAlign verticalAlign)
+  "Properties that a selected shape passes on to its label.
+The stroke color is the label's text color; upstream's
+`actionChangeStrokeColor' sets it on bound text as well.")
 
 (defun excali--style-targets (property)
   "Return the elements PROPERTY changes: the selection, plus labels.

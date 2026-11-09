@@ -4,6 +4,8 @@
 
 ** Fixed
 
+- Setting a stroke color on a shape also colors its label, as upstream does.
+
 - Tool keys in =excali-mode-map= (=h=, =v=, =r=, ... and their digits) are
   bound to named commands =excali-tool-hand=, =excali-tool-select=, ... instead
   of anonymous functions, so which-key, =describe-mode= and =C-h k= show what

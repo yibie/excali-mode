@@ -78,6 +78,15 @@
     (excali-style--opacity-other 250)
     (should (= (excali--get box 'opacity) 100))))
 
+(ert-deftest excali-style-test-stroke-color-reaches-label ()
+  "A stroke color set on a shape colors its label too, as upstream."
+  (excali-style-test--with-box box
+    (let ((label (excali--add-bound-text box)))
+      (excali--set-text label "label")
+      (excali-set-style 'strokeColor "#e03131")
+      (should (equal (excali--get box 'strokeColor) "#e03131"))
+      (should (equal (excali--get label 'strokeColor) "#e03131")))))
+
 (ert-deftest excali-style-test-labels-follow-upstream ()
   "The panel speaks upstream's words."
   (should (equal (car (rassoc "round" (excali--style-choices 'arrowType))) "Curved arrow"))
