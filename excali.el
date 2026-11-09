@@ -60,6 +60,7 @@
 (require 'excali-export)
 (require 'excali-dsl)
 (require 'excali-bench)
+(require 'excali-help)
 
 ;;;; Keys
 ;;
@@ -213,7 +214,7 @@ or deselect."
   "C-c C-b" #'excali-cycle-backend
   "C-c C-p" #'excali-toggle-pixel-scale
   "C-c C-r" #'excali--sync-canvas
-  "?" #'describe-mode)
+  "?" #'excali-help)
 
 ;; Mouse events over the canvas's hot spots (excali-cursor.el) arrive
 ;; with the prefix key `excali-canvas'.  Under it the mode's own bindings

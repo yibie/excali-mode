@@ -270,7 +270,8 @@ other setups are welcome.
 (by excali or Excalidraw); such scenes are saved to a new =.excalidraw= file.
 
 Plain keys follow Excalidraw; its Mod shortcuts use super (Cmd on
-macOS), and the usual Emacs keys work too.  =?= lists everything.
+macOS), and the usual Emacs keys work too.  =?= shows the common keys,
+grouped; =?= again lists everything.
 
 | Key | Action |
 |-----+--------|

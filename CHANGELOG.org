@@ -2,6 +2,12 @@
 
 * Unreleased
 
+** New
+
+- =?= opens a keyboard shortcuts panel (=excali-help=) that groups the
+  canvas's keys, as upstream's shortcuts dialog does.  Each key in it also
+  runs its command; =?= again shows =describe-mode=, the full list.
+
 ** Fixed
 
 - Setting a stroke color on a shape also colors its label, as upstream does.
