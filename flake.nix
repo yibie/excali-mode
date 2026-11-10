@@ -7,6 +7,11 @@
     # emacs-module.h needs canvas_data, i.e. Emacs 32), so it is offered
     # per package set.  Usage, inside emacsWithPackages:
     #   (excali-mode.lib.mkEmacsPackage epkgs)
-    lib.mkEmacsPackage = epkgs: epkgs.callPackage ./nix/excali.nix {src = self;};
+    # Excalidraw's fonts come too; `.override {excali-fonts = null;}` drops them.
+    lib.mkEmacsPackage = epkgs:
+      epkgs.callPackage ./nix/excali.nix {
+        src = self;
+        excali-fonts = epkgs.callPackage ./nix/fonts.nix {};
+      };
   };
 }
