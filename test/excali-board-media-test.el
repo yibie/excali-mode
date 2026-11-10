@@ -59,7 +59,7 @@
 (ert-deftest excali-board-media-process-cap-and-cleanup ()
   (excali-board-test--with
     (cl-letf (((symbol-function 'excali-board-media--command)
-               (lambda (&rest _) '("/bin/sleep" "10"))))
+               (lambda (&rest _) (list (executable-find "sleep") "10"))))
       (dotimes (i 3)
         (let ((file (expand-file-name (format "%s.pdf" i) dir)))
           (write-region "x" nil file nil 'silent)
@@ -140,7 +140,7 @@
       (write-region "x" nil pdf nil 'silent)
       (let ((card (excali-board-insert-media pdf)))
         (cl-letf (((symbol-function 'excali-board-media--command)
-                   (lambda (&rest _) '("/bin/sleep" "10")))
+                   (lambda (&rest _) (list (executable-find "sleep") "10")))
                   ((symbol-function 'run-at-time)
                    (lambda (_seconds _repeat callback &rest _) (setq timeout callback) nil)))
           (excali-board--blocks card))
