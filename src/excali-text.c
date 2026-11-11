@@ -30,7 +30,9 @@
 /* Upstream's getFontFamilyString gives "<family>, <fallbacks>", with
    Xiaolai only after Excalifont, then the generic family and Segoe UI
    Emoji.  Alternate names of the same fonts follow each family so that
-   system installs are found too.  The generic families are spelled out
+   system installs are found too, and so do the names inside upstream's
+   merged WOFF2 subsets ("Nunito ExtraLight", "Comic Shanns Regular"),
+   which `make fonts' writes to fonts/.  The generic families are spelled out
    as concrete fonts: Pango's CoreText backend does not resolve
    "sans-serif", and would take digits and spaces from the first family
    it finds, the emoji font.  CJK system fonts come before emoji ones.  */
@@ -53,10 +55,10 @@ static const struct {
         {EXCALI_FONT_CASCADIA, "Cascadia Code, Cascadia, " MONO CJK EMOJI},
         {EXCALI_FONT_EXCALIFONT,
          "Excalifont, Xiaolai, Xiaolai SC, " SANS CJK EMOJI},
-        {EXCALI_FONT_NUNITO, "Nunito, " SANS CJK EMOJI},
+        {EXCALI_FONT_NUNITO, "Nunito, Nunito ExtraLight, " SANS CJK EMOJI},
         {EXCALI_FONT_LILITA_ONE, "Lilita One, " SANS CJK EMOJI},
         {EXCALI_FONT_COMIC_SHANNS,
-         "Comic Shanns, Comic Shanns Mono, " MONO CJK EMOJI},
+         "Comic Shanns, Comic Shanns Regular, Comic Shanns Mono, " MONO CJK EMOJI},
         {EXCALI_FONT_LIBERATION_SANS,
          "Liberation Sans, Arial, Helvetica, " SANS CJK EMOJI},
         {EXCALI_FONT_ASSISTANT, "Assistant, " SANS CJK EMOJI},
