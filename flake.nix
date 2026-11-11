@@ -10,7 +10,6 @@
     # Excalidraw's fonts come too; `.override {excali-fonts = null;}` drops them.
     lib.mkEmacsPackage = epkgs:
       epkgs.callPackage ./nix/excali.nix {
-        src = self;
         excali-fonts = epkgs.callPackage ./nix/fonts.nix {};
       };
   };

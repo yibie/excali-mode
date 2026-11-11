@@ -13,13 +13,6 @@
 }: let
   # fonts/excali-fetch-fonts.el's `excali-fonts--families'.
   families = ["Excalifont" "Nunito" "Lilita" "ComicShanns" "Liberation" "Cascadia" "Virgil"];
-  # Merged files whose internal family name is not the one
-  # src/excali-text.c asks for ("Nunito ExtraLight", "Comic Shanns
-  # Regular"), so fontconfig would fall back to a system font.
-  renames = {
-    Nunito = "Nunito";
-    ComicShanns = "Comic Shanns";
-  };
   python = python3.withPackages (ps: [ps.fonttools]);
 in
   stdenvNoCC.mkDerivation {
@@ -55,10 +48,6 @@ in
           cp "''${ttfs[0]}" "out/$family/"
         fi
       done
-      ${lib.concatStrings (lib.mapAttrsToList (dir: family: ''
-          python ${./set-font-family.py} out/${dir}/${dir}-Regular.ttf ${lib.escapeShellArg family}
-        '')
-        renames)}
       install -Dm644 "$xiaolai" out/Xiaolai/Xiaolai-Regular.ttf
       runHook postBuild
     '';

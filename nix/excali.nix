@@ -1,6 +1,5 @@
 {
   lib,
-  src,
   stdenv,
   emacs,
   trivialBuild,
@@ -15,10 +14,26 @@
   makeFontsConf,
   # Excalidraw's fonts (./fonts.nix); null to fall back to system fonts.
   excali-fonts ? null,
-}:
+}: let
+  # The Lisp, the module's C sources, and the tests run by the check.
+  src = lib.fileset.toSource {
+    root = ./..;
+    fileset = lib.fileset.unions [
+      ../Makefile
+      ../src
+      ../test
+      (lib.fileset.fileFilter (file: file.hasExt "el") ./..)
+    ];
+  };
+  # The Version header of excali.el.
+  versionLine =
+    lib.findFirst (lib.hasPrefix ";; Version: ") null
+    (lib.splitString "\n" (builtins.readFile ../excali.el));
+in
+  assert versionLine != null;
 trivialBuild {
   pname = "excali";
-  version = "0.3.0";
+  version = lib.removePrefix ";; Version: " versionLine;
   inherit src;
 
   nativeBuildInputs = [pkg-config];
@@ -33,7 +48,10 @@ trivialBuild {
     runHook postBuild
   '';
 
-  doCheck = true;
+  # make test runs the whole suite, which would slow every rebuild of
+  # the consumer's Emacs; enable it with
+  # `.overrideAttrs {doCheck = true;}'.
+  doCheck = false;
   # The sandbox has no fontconfig config or writable cache.
   checkPhase = ''
     runHook preCheck
