@@ -214,6 +214,45 @@ excali uses itself.  Note that =which-key-mode= is global: turning it off
 there turns it off in every buffer until you turn it on again.  On macOS
 the module is =excali-module.dylib=.
 
+** With straight.el
+
+[[https://github.com/ocodo][@ocodo]] [[https://github.com/yibie/excali-mode/issues/4][shared this setup]] for straight.el.  Straight clones
+the repository into its =repos/= directory and builds the package in
+=build/=, so a =:post-build= step runs =make= in the clone and links the
+compiled module into the build directory:
+
+#+begin_src emacs-lisp
+(defun use-excali-build ()
+  "Build the excali native module and link it into straight's build dir."
+  (let* ((repo   (straight--repos-dir "excali-mode"))
+         (build  (straight--build-dir "excali"))
+         (module (concat "excali-module" module-file-suffix))
+         (src    (expand-file-name module repo))
+         (dst    (expand-file-name module build)))
+    (message "excali: building in %s" repo)
+    (unless (zerop (call-process "make" nil "*excali-build*" nil "-C" repo))
+      (error "excali: make failed (see *excali-build*)"))
+    (unless (file-exists-p src)
+      (error "excali: module not produced at %s" src))
+    (message "excali: module built at %s" src)
+    (make-symbolic-link src dst t)
+    (message "excali: linked %s -> %s (exists: %s)"
+             src dst (file-exists-p dst))))
+
+(use-package excali
+  :straight (excali :type git :host github :repo "yibie/excali-mode"
+                    :post-build (use-excali-build))
+  :if (>= emacs-major-version 32)
+  :commands (excali-open excali-new)
+  :mode ("\\.excalidsl\\'" . excali-dsl-mode))
+#+end_src
+
+Define =use-excali-build= before the =use-package= form, since straight
+calls it while building.  If the build fails, the =*excali-build*= buffer
+holds the =make= output.  The original used =excali-module.so=; the
+version above takes the name from =module-file-suffix=, so the same code
+links =excali-module.dylib= on macOS.
+
 * Build and test
 
 #+begin_src shell
