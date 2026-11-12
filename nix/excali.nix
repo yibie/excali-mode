@@ -22,6 +22,7 @@
       ../Makefile
       ../src
       ../test
+      ../examples
       (lib.fileset.fileFilter (file: file.hasExt "el") ./..)
     ];
   };
